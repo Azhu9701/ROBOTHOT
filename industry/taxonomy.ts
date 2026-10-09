@@ -27,7 +27,7 @@ export const CATEGORIES = [
 export const RELEASE: { category: string; tag: string; unit: string } | null = { category: "ai-models", tag: "模型发布", unit: "个新模型" };
 
 /** 周报月报的总述可以直接写、不必在报道里找到出处的行业通用词（小写）。站名会自动算进去。 */
-export const PLAIN_TERMS: readonly string[] = ["ai", "api", "llm", "gpu", "agi", "ceo", "ipo"];
+export const PLAIN_TERMS: readonly string[] = ["ai", "api", "llm", "gpu", "agi", "ceo", "ipo", "robot", "robotics", "ros", "slam", "vla"];
 
 /**
  * 内容理解一步给每篇资料判的“内容类型”（写在 prompts/content-understanding.md 里，改了类型要同步改那份提示词）。
@@ -46,6 +46,7 @@ export const CATEGORY_TAGS = [
 /** 可选的主题标签。 */
 export const TOPIC_TAGS = [
   "Agent", "编码", "推理", "多模态", "语音", "视频", "图像生成", "RAG", "端侧", "数据/训练", "搜索", "部署/工程", "开源生态", "具身智能", "MCP/工具调用",
+  "人形机器人", "四足机器人", "机械臂", "移动机器人", "机器人安全", "ROS",
 ] as const;
 
 /** 可选的实体标签（公司、机构、平台）。 */
@@ -72,6 +73,8 @@ export const TAG_SYNONYMS: Readonly<Record<string, string>> = {
  * 把事实的主体对到发布方时也认它们。
  */
 export const ENTITIES: Record<string, { name: string; displayTag: string | null; aliases: string[]; otherNames?: string[] }> = {
+  unitree: { name: "宇树科技", displayTag: null, aliases: ["宇树科技", "宇树", "Unitree", "Unitree Robotics"] },
+  "boston-dynamics": { name: "Boston Dynamics", displayTag: null, aliases: ["Boston Dynamics", "波士顿动力"] },
   "world-labs": { name: "World Labs", displayTag: null, aliases: ["World Labs"] },
   "thinking-machines": { name: "Thinking Machines Lab", displayTag: null, aliases: ["Thinking Machines"] },
   amd: { name: "AMD", displayTag: null, aliases: ["AMD", "Advanced Micro Devices"] },
@@ -97,6 +100,8 @@ export const ENTITIES: Record<string, { name: string; displayTag: string | null;
  * 行业没有这个问题时可以留空数组。
  */
 export const IDENTITY_LEXICON: ReadonlyArray<{ id: string; name: string; patterns: RegExp[] }> = [
+  { id: "unitree", name: "宇树科技", patterns: [/宇树|\bunitree\b/i] },
+  { id: "boston-dynamics", name: "Boston Dynamics", patterns: [/boston\s+dynamics|波士顿动力/i] },
   { id: "openai", name: "OpenAI", patterns: [/openai|chatgpt|\bgpt-?[o\d]|\bsora\b|\bcodex\b/i] },
   { id: "anthropic", name: "Anthropic", patterns: [/anthropic|\bclaude\b/i, /\b(?:opus|sonnet|haiku)\s*\d+(?:[.\-]\d+)*\b/i, /\bfable\s*\d+(?:[.\-]\d+)*\b|\bmythos\b/i] },
   { id: "google", name: "Google / Gemini", patterns: [/google|deepmind|\bgemini\b|notebooklm|\bveo\s?\d|\bAlphaFold\b|\bAMIE\b/i] },
@@ -133,6 +138,8 @@ export const IDENTITY_LEXICON: ReadonlyArray<{ id: string; name: string; pattern
 
 /** 这些域名上的文章，发布方就是对应的公司（托管平台如 GitHub、arXiv 不算）。 */
 export const PUBLISHER_DOMAINS: ReadonlyArray<{ entityId: string; domains: readonly string[] }> = [
+  { entityId: "unitree", domains: ["unitree.com"] },
+  { entityId: "boston-dynamics", domains: ["bostondynamics.com"] },
   { entityId: "openai", domains: ["openai.com"] },
   { entityId: "anthropic", domains: ["anthropic.com", "claude.com"] },
   { entityId: "google", domains: ["deepmind.google", "ai.google", "blog.google"] },

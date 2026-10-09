@@ -182,6 +182,19 @@ test("a short post in Chinese is its own copy; a content-filter refusal is trans
   assert.deepEqual(calls("SENSITIVE").filter((s) => s === "understand" || s === "summarize"), ["understand", "summarize"]);
 });
 
+test("robot makers need source evidence; a model name alone cannot invent its maker", () => {
+  const unknown = { title: "某团队展示 G1", text: "展示了一个机器人，未说明制造商。", sourceKind: "rss" };
+  const rejected = enforceIdentity(unknown, { titleZh: "宇树展示 G1", summaryZh: "波士顿动力展示机器人。" });
+  assert.equal(rejected.titleZh, unknown.title);
+  assert.equal(rejected.summaryZh, "");
+  assert.deepEqual(rejected.identityGuard.unsupportedTitleEntityIds, ["unitree"]);
+  assert.deepEqual(rejected.identityGuard.unsupportedSummaryEntityIds, ["boston-dynamics"]);
+  for (const [original, translated] of [["Unitree", "宇树科技"], ["Boston Dynamics", "波士顿动力"]]) {
+    const input = { title: `${original} robot update`, text: `${original} announced a robot update.`, sourceKind: "rss" };
+    assert.equal(enforceIdentity(input, { titleZh: `${translated}发布更新`, summaryZh: `${translated}宣布机器人更新。` }).identityGuard.outcome, "pass");
+  }
+});
+
 test("guards: a company the input does not name is not written in; long summaries are cut at sentences", () => {
   const input = { title: "某实验室发布新模型", text: "某实验室发布了一个新模型，参数规模和价格都有说明。", sourceKind: "rss" };
   const guarded = enforceIdentity(input, { titleZh: "OpenAI 发布新模型", summaryZh: "某实验室发布新模型。" });

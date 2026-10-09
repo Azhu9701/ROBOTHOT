@@ -142,6 +142,16 @@ test("withdrawn articles stay out of lists and counts", async () => {
   assert.equal(summary.latest?.title, `Kimi 发布新模型 ${T}`, "the index shows the newest public article");
 });
 
+test("robot topics use explicit subjects and tags, and withdraw content from both views", async () => {
+  const robot = await report({ at: hoursAgo(2), title: `宇树机器人发布 ${T}`, subjects: ["unitree"], tags: ["产品更新", "人形机器人"], category: "ai-products" });
+  await report({ at: hoursAgo(1), title: `无关模型更新 ${T}`, subjects: ["openai"], tags: ["模型发布"], category: "ai-models" });
+  assert.deepEqual(ids((await page("unitree")).items), [robot]);
+  assert.deepEqual(ids((await page("humanoid")).items), [robot]);
+  await sql`UPDATE publications SET visibility = 'withdrawn' WHERE article_id = ${robot}`;
+  assert.deepEqual(ids((await page("unitree")).items), []);
+  assert.deepEqual(ids((await page("humanoid")).items), []);
+});
+
 test("every topic has a page; unknown topics and pages past the end have none", async () => {
   const empty = await page("cursor");
   assert.equal(empty.topic.indexable, false, "a topic without content is not indexed");
