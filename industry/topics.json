@@ -2,13 +2,13 @@
   "groups": [
     {
       "key": "company",
-      "name": "公司与模型",
-      "blurb": "按厂商追踪模型、产品与公司动态"
+      "name": "厂商与机构",
+      "blurb": "按厂商与机构追踪机器人、具身模型与工程进展"
     },
     {
       "key": "field",
       "name": "技术方向",
-      "blurb": "按技术领域深挖：Agent、多模态、具身智能……"
+      "blurb": "人形、四足、机械臂、移动机器人、具身智能与开源工程"
     },
     {
       "key": "genre",
@@ -17,6 +17,74 @@
     }
   ],
   "topics": [
+    {
+      "slug": "unitree",
+      "name": "宇树科技 / Unitree",
+      "group": "company",
+      "entityId": "unitree",
+      "definition": "收录以宇树科技为主体的机器人发布与进展；型号、参数和交付状态以具体原文为准。"
+    },
+    {
+      "slug": "boston-dynamics",
+      "name": "Boston Dynamics / 波士顿动力",
+      "group": "company",
+      "entityId": "boston-dynamics",
+      "definition": "收录以 Boston Dynamics 为主体的机器人产品、研究与部署消息；演示与实际部署分开理解。"
+    },
+    {
+      "slug": "humanoid",
+      "name": "人形机器人",
+      "group": "field",
+      "tags": [
+        "人形机器人"
+      ],
+      "definition": "追踪人形机器人的产品、研究和工程进展；保留任务、环境、测试条件和原文出处。"
+    },
+    {
+      "slug": "quadruped",
+      "name": "四足机器人",
+      "group": "field",
+      "tags": [
+        "四足机器人"
+      ],
+      "definition": "追踪四足机器人的产品、研究和工程进展；保留任务、环境、测试条件和原文出处。"
+    },
+    {
+      "slug": "manipulation",
+      "name": "机械臂",
+      "group": "field",
+      "tags": [
+        "机械臂"
+      ],
+      "definition": "追踪机械臂的产品、研究和工程进展；保留任务、环境、测试条件和原文出处。"
+    },
+    {
+      "slug": "mobile-robots",
+      "name": "移动机器人",
+      "group": "field",
+      "tags": [
+        "移动机器人"
+      ],
+      "definition": "追踪移动机器人的产品、研究和工程进展；保留任务、环境、测试条件和原文出处。"
+    },
+    {
+      "slug": "robot-safety",
+      "name": "机器人安全",
+      "group": "field",
+      "tags": [
+        "机器人安全"
+      ],
+      "definition": "追踪机器人安全的产品、研究和工程进展；保留任务、环境、测试条件和原文出处。"
+    },
+    {
+      "slug": "ros",
+      "name": "ROS",
+      "group": "field",
+      "tags": [
+        "ROS"
+      ],
+      "definition": "追踪ROS的产品、研究和工程进展；保留任务、环境、测试条件和原文出处。"
+    },
     {
       "slug": "openai",
       "name": "OpenAI / ChatGPT",
