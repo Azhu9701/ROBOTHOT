@@ -1,5 +1,7 @@
 # 部署
 
+聚身之家原生接入使用 AIMAN 仓库的 `config/robot-hot/compose.yml`，由 Rust 网关提供管理员认证和公开读取。启用 `AIMAN_MODEL_CONFIG_PATH` 时，将 AI 工作台的专用配置目录只读挂载到 API/worker；默认模型每次调用读取 v1 配置中的地址与密钥，缺失或损坏会停止调用。应挂载整个专用目录以跟随原子替换，不能挂载整个 `.pi/agent`。`LLM_MODEL`、结构化参数和调用预算仍由资讯引擎管理。升级时移除引擎环境里复制的 `LLM_BASE_URL`/`LLM_API_KEY`，不删除历史模型回执和设置；未启用共享路径的独立部署继续使用原环境配置。
+
 ## 用 Docker（推荐）
 
 需要一台装了 Docker（带 Compose）的机器。云服务器建议至少 2 核、4 GB 内存，构建镜像时要用到。

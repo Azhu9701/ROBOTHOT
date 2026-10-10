@@ -1,5 +1,5 @@
 // Which models a step may use (admin) and whether it is sent an image (runtime) read the same flag.
-import "./setup.ts";
+import { pointModels } from "./setup.ts";
 import assert from "node:assert/strict";
 import { after, test } from "node:test";
 import { closeDb } from "@aihot/backend/db";
@@ -13,6 +13,7 @@ import {
 import { MODELS } from "@aihot/backend/providers/llm";
 
 after(closeDb);
+pointModels("http://127.0.0.1:9", ["qwen3-vl-flash", "deepseek-flash"]);
 
 test("every step takes a model that reads images; only a step that needs images refuses a text model", async () => {
   const understand = CAPABILITIES.understand;

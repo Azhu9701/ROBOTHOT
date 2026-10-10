@@ -4,7 +4,8 @@
 // (site/models.ts).
 import type { z } from "zod";
 import { PRESETS } from "@aihot/site/models";
-import { config, credential } from "../config.ts";
+import { config } from "../config.ts";
+import { modelConnection } from "./model-connection.ts";
 import { sha256 } from "../lib/ids.ts";
 import { assertAccepted, paidRequest, ProviderRejectedError, rejectReceivedResponse } from "./receipts.ts";
 
@@ -127,11 +128,11 @@ function isConnectFailure(error: unknown): boolean {
 }
 
 export async function chatJson<S extends z.ZodType>(opts: ChatJsonOptions<S>): Promise<ChatJsonResult<z.infer<S>>> {
-  const spec = MODELS[opts.model];
-  if (!spec) throw new Error(`Unknown model ${opts.model}`);
+  const registered = MODELS[opts.model];
+  if (!registered) throw new Error(`Unknown model ${opts.model}`);
+  const spec = { ...registered };
   if (!config.modelCallsEnabled) throw new Error("Model calls are disabled (MODEL_CALLS_ENABLED=false)");
-  const baseUrl = credential("models", spec.baseUrlEnv);
-  const apiKey = credential("models", spec.apiKeyEnv);
+  const { baseUrl, apiKey } = modelConnection(spec);
   if (!baseUrl || !apiKey || !spec.model) throw new Error(`Model ${opts.model} is not configured (${spec.baseUrlEnv}, ${spec.apiKeyEnv}${spec.key === "default" ? ", LLM_MODEL" : ""})`);
 
   const temperature = opts.temperature ?? 0.2;

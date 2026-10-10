@@ -344,6 +344,7 @@ export interface AdminModelUsage {
 
 export interface AdminModels {
   days: number;
+  connection?: { source: "workbench" | "environment"; configured: boolean; model: string; revision: number | null };
   capabilities: Array<{ key: string; label: string; env: string; defaultModel: string; vision: boolean; current: { model: string; source: "admin" | "env" | "default" }; usage: AdminModelUsage[] }>;
   choices: Array<{ key: string; service: string; vision: boolean }>;
   history: Array<{ at: Timestamp; actor: string; subject: string; reason: string | null; before: { model: string; source: string } | null; after: { model: string; source: string } | null }>;

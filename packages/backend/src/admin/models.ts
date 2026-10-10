@@ -6,6 +6,7 @@ import type { AdminModels, BeforeJson } from "@aihot/contracts/admin";
 import { sql } from "../db.ts";
 import { capabilities, capabilityAcceptsModel, invalidateModelCache, modelSources } from "../editorial/models.ts";
 import { MODELS } from "../providers/llm.ts";
+import { modelConfigured, modelConnection } from "../providers/model-connection.ts";
 import { audit } from "../audit.ts";
 
 interface UsageRow {
@@ -95,8 +96,14 @@ export async function modelsOverview(days = 7): Promise<BeforeJson<AdminModels>>
         estimate: priced(u),
       })),
   }));
-  const choices = Object.values(MODELS).map((m) => ({ key: m.key, service: m.service, vision: !!m.vision }));
-  return { days, capabilities: steps, choices, history, benches };
+  const choices = Object.values(MODELS).filter(modelConfigured).map((m) => ({ key: m.key, service: m.service, vision: !!m.vision }));
+  const spec = MODELS.default!;
+  const connection: NonNullable<AdminModels["connection"]> = {
+    source: process.env.AIMAN_MODEL_CONFIG_PATH ? "workbench" : "environment",
+    configured: modelConfigured(spec), model: spec.model, revision: null,
+  };
+  if (connection.configured) connection.revision = modelConnection(spec).revision;
+  return { days, connection, capabilities: steps, choices, history, benches };
 }
 
 /** Switches a capability to another registered model (or back to the environment/default when null). */
@@ -108,6 +115,7 @@ export async function switchModel(capability: string, model: string | null, reas
     const spec = MODELS[model];
     if (!spec) throw Object.assign(new Error("unknown model"), { statusCode: 400 });
     if (!capabilityAcceptsModel(c, spec)) throw Object.assign(new Error("this capability needs a vision model"), { statusCode: 400 });
+    if (!modelConfigured(spec)) throw Object.assign(new Error("model connection is not configured"), { statusCode: 400 });
   }
   const before = (await modelSources())[capability];
   if (model === null) await sql`DELETE FROM settings WHERE key = ${`models.${capability}`}`;
