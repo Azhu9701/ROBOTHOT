@@ -83,6 +83,40 @@
       ],
       "site_fulltext": false,
       "syndicate_fulltext": false
+    },
+    {
+      "id": "web-theroboradar-news",
+      "name": "RoboRadar（机器人行业资讯聚合）",
+      "kind": "web_list",
+      "config": {
+        "url": "https://theroboradar.com/news",
+        "parseMode": "html",
+        "itemSelector": "section article.group",
+        "linkSelector": "h3 a[href^='/news/']",
+        "titleSelector": "h3 a[href^='/news/']",
+        "allowUrlPrefixes": [
+          "https://theroboradar.com/news/"
+        ],
+        "detail": {
+          "publishedAtSelector": "time[datetime]",
+          "maxFetches": 8
+        },
+        "_aihot": {
+          "initialBackfillLimit": 8
+        }
+      },
+      "tier": "T2",
+      "owner_entity_id": null,
+      "participation_mode": "hot_signal",
+      "interval_minutes": 120,
+      "tags": [
+        "机器人",
+        "具身智能",
+        "资讯聚合",
+        "需原始来源核验"
+      ],
+      "site_fulltext": false,
+      "syndicate_fulltext": false
     }
   ]
 }
