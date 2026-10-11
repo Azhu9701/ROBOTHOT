@@ -5,7 +5,7 @@
 import { DEFAULTS } from "@aihot/site/models";
 import { sql } from "../db.ts";
 import { serverModules } from "../modules.ts";
-import { MODELS } from "../providers/llm.ts";
+import { modelSpec } from "../providers/llm.ts";
 
 export interface Capability {
   /** The step's name on the admin page, with an explanation in full-width brackets if it needs one; alerts use the name alone. */
@@ -44,7 +44,7 @@ export function capabilities(): Record<string, Capability> {
 /** Names of the steps whose default model belongs to a service: what stops when that service refuses us. */
 export function stepsOnService(service: string): string[] {
   return Object.values(capabilities())
-    .filter((c) => MODELS[c.default]?.service === service)
+    .filter((c) => modelSpec(c.default)?.service === service)
     .map((c) => c.label.split("（")[0]!);
 }
 
@@ -54,7 +54,7 @@ async function overrides(): Promise<Record<string, string>> {
   if (cache && Date.now() - cache.at < 60_000) return cache.overrides;
   const rows = await sql<{ key: string; value: { model?: string } }[]>`SELECT key, value FROM settings WHERE key LIKE 'models.%'`;
   const map: Record<string, string> = {};
-  for (const r of rows) if (r.value?.model && MODELS[r.value.model]) map[r.key.slice("models.".length)] = r.value.model;
+  for (const r of rows) if (r.value?.model && modelSpec(r.value.model)) map[r.key.slice("models.".length)] = r.value.model;
   cache = { at: Date.now(), overrides: map };
   return map;
 }
@@ -65,7 +65,7 @@ export function invalidateModelCache() {
 
 /** Whether a registered model explicitly declares image input support. Unspecified means text-only. */
 export function modelSupportsVision(model: string): boolean {
-  return MODELS[model]?.vision === true;
+  return modelSpec(model)?.vision === true;
 }
 
 /** Whether a step can use a registered model. A model that reads images writes text as well. */
@@ -78,7 +78,7 @@ export async function modelFor(capability: CapabilityKey | (string & {})): Promi
   const c = capabilities()[capability];
   if (!c) throw new Error(`unknown model step: ${capability}`);
   const chosen = (await overrides())[capability] ?? process.env[c.env] ?? c.default;
-  return MODELS[chosen] ? chosen : c.default;
+  return modelSpec(chosen) ? chosen : c.default;
 }
 
 /** Where the current choice comes from, for the admin page. */
@@ -87,7 +87,7 @@ export async function modelSources(): Promise<Record<string, { model: string; so
   const out: Record<string, { model: string; source: "admin" | "env" | "default" }> = {};
   for (const [key, c] of Object.entries(capabilities())) {
     if (o[key]) out[key] = { model: o[key]!, source: "admin" };
-    else if (process.env[c.env] && MODELS[process.env[c.env]!]) out[key] = { model: process.env[c.env]!, source: "env" };
+    else if (process.env[c.env] && modelSpec(process.env[c.env]!)) out[key] = { model: process.env[c.env]!, source: "env" };
     else out[key] = { model: c.default, source: "default" };
   }
   return out;

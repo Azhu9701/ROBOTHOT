@@ -5,7 +5,7 @@
 import type { z } from "zod";
 import { PRESETS } from "@aihot/site/models";
 import { config } from "../config.ts";
-import { modelConnection } from "./model-connection.ts";
+import { modelConnection, sharedModelCatalog } from "./model-connection.ts";
 import { sha256 } from "../lib/ids.ts";
 import { assertAccepted, paidRequest, ProviderRejectedError, rejectReceivedResponse } from "./receipts.ts";
 
@@ -51,6 +51,13 @@ export const MODELS: Record<string, ModelSpec> = {
   // The pack's named presets, each with its own address and key.
   ...Object.fromEntries(Object.entries(PRESETS).map(([key, preset]) => [key, { key, ...preset }])),
 };
+
+/** Saved shared selections use provider IDs, without borrowing a preset's provider or capabilities. */
+export function modelSpec(key: string): ModelSpec | undefined {
+  if (!process.env.AIMAN_MODEL_CONFIG_PATH || key === "default") return MODELS[key];
+  if (!key || key.length > 200 || /\s/u.test(key)) return undefined;
+  return { ...MODELS.default!, key, model: key, extra: undefined, reasoningTokens: undefined, vision: false };
+}
 
 export type ContentPart = { type: "text"; text: string } | { type: "image_url"; image_url: { url: string } };
 
@@ -128,10 +135,13 @@ function isConnectFailure(error: unknown): boolean {
 }
 
 export async function chatJson<S extends z.ZodType>(opts: ChatJsonOptions<S>): Promise<ChatJsonResult<z.infer<S>>> {
-  const registered = MODELS[opts.model];
+  const registered = modelSpec(opts.model);
   if (!registered) throw new Error(`Unknown model ${opts.model}`);
   const spec = { ...registered };
   if (!config.modelCallsEnabled) throw new Error("Model calls are disabled (MODEL_CALLS_ENABLED=false)");
+  if (process.env.AIMAN_MODEL_CONFIG_PATH && !(await sharedModelCatalog(spec)).includes(spec.model)) {
+    throw new Error("模型已不在共享连接的实时目录中，未发起付费调用");
+  }
   const { baseUrl, apiKey } = modelConnection(spec);
   if (!baseUrl || !apiKey || !spec.model) throw new Error(`Model ${opts.model} is not configured (${spec.baseUrlEnv}, ${spec.apiKeyEnv}${spec.key === "default" ? ", LLM_MODEL" : ""})`);
 

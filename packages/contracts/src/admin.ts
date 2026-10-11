@@ -343,6 +343,7 @@ export interface AdminModelUsage {
 }
 
 export interface AdminModels {
+  catalogError?: string;
   days: number;
   connection?: { source: "workbench" | "environment"; configured: boolean; model: string; revision: number | null };
   capabilities: Array<{ key: string; label: string; env: string; defaultModel: string; vision: boolean; current: { model: string; source: "admin" | "env" | "default" }; usage: AdminModelUsage[] }>;

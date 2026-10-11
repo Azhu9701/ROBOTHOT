@@ -5,12 +5,13 @@
 import type { AdminModels, BeforeJson } from "@aihot/contracts/admin";
 import { sql } from "../db.ts";
 import { capabilities, capabilityAcceptsModel, invalidateModelCache, modelSources } from "../editorial/models.ts";
-import { MODELS } from "../providers/llm.ts";
-import { modelConfigured, modelConnection } from "../providers/model-connection.ts";
+import { MODELS, modelSpec } from "../providers/llm.ts";
+import { modelConfigured, modelConnection, sharedModelCatalog } from "../providers/model-connection.ts";
 import { audit } from "../audit.ts";
 
 interface UsageRow {
   purpose: string;
+  service: string;
   model: string | null;
   prompt_version: string | null;
   calls: number;
@@ -35,7 +36,7 @@ export async function modelsOverview(days = 7): Promise<BeforeJson<AdminModels>>
   const [sources, usage, prices, history, benches] = await Promise.all([
     modelSources(),
     sql<UsageRow[]>`
-      SELECT r.purpose, a.model, r.request->>'promptVersion' AS prompt_version, count(*)::int AS calls,
+      SELECT r.purpose, a.service, a.model, r.request->>'promptVersion' AS prompt_version, count(*)::int AS calls,
              count(*) FILTER (WHERE a.status = 'received')::int AS ok,
              count(*) FILTER (WHERE a.status = 'failed')::int AS failed,
              count(*) FILTER (WHERE a.status = 'unknown')::int AS unknown,
@@ -48,7 +49,7 @@ export async function modelsOverview(days = 7): Promise<BeforeJson<AdminModels>>
              sum(a.cost) FILTER (WHERE a.cost_basis = 'actual') AS actual_cost, max(a.currency) AS currency
       FROM receipt_attempts a JOIN receipts r ON r.id = a.receipt_id
       WHERE a.started_at >= ${since} AND a.origin = 'live' AND a.model IS NOT NULL
-      GROUP BY 1, 2, 3 ORDER BY 1, 4 DESC`,
+      GROUP BY 1, 2, 3, 4 ORDER BY 1, 5 DESC`,
     sql<{ service: string; model: string; currency: string; input_per_mtok: string | null; cached_per_mtok: string | null; output_per_mtok: string | null }[]>`
       SELECT service, model, currency, input_per_mtok, cached_per_mtok, output_per_mtok FROM service_prices`,
     sql<BeforeJson<AdminModels["history"][number]>[]>`
@@ -58,11 +59,10 @@ export async function modelsOverview(days = 7): Promise<BeforeJson<AdminModels>>
              (SELECT coalesce(jsonb_object_agg(key, value - 'sweep'), '{}'::jsonb) FROM jsonb_each(r.summary)) AS summary,
              created_at FROM selectbench_runs r ORDER BY created_at DESC LIMIT 8`,
   ]);
-  const serviceOf = (model: string) => Object.values(MODELS).find((m) => m.model === model || m.key === model)?.service ?? null;
   // Cached prompt tokens at the cache price, the rest at the input price; calls that carry their own cost
   // are not estimated again.
   const priced = (u: UsageRow) => {
-    const service = u.model ? serviceOf(u.model) : null;
+    const service = u.service;
     const p = prices.find((x) => x.service === service && x.model === u.model) ?? prices.find((x) => x.service === service && x.model === "");
     if (!p || (!p.input_per_mtok && !p.output_per_mtok)) return null;
     const cached = Number(u.tokens_cached ?? 0);
@@ -96,24 +96,35 @@ export async function modelsOverview(days = 7): Promise<BeforeJson<AdminModels>>
         estimate: priced(u),
       })),
   }));
-  const choices = Object.values(MODELS).filter(modelConfigured).map((m) => ({ key: m.key, service: m.service, vision: !!m.vision }));
+  let choices = Object.values(MODELS).filter(modelConfigured).map((m) => ({ key: m.key, service: m.service, vision: !!m.vision }));
   const spec = MODELS.default!;
   const connection: NonNullable<AdminModels["connection"]> = {
     source: process.env.AIMAN_MODEL_CONFIG_PATH ? "workbench" : "environment",
     configured: modelConfigured(spec), model: spec.model, revision: null,
   };
   if (connection.configured) connection.revision = modelConnection(spec).revision;
-  return { days, connection, capabilities: steps, choices, history, benches };
+  let catalogError: string | undefined;
+  if (process.env.AIMAN_MODEL_CONFIG_PATH) {
+    choices = [];
+    if (connection.configured) {
+      try { choices = (await sharedModelCatalog(spec)).map(key => ({ key, service: "llm", vision: false })); }
+      catch { catalogError = "共享模型目录读取失败，请刷新后重试"; }
+    }
+  }
+  return { days, connection, capabilities: steps, choices, history, benches, catalogError };
 }
 
-/** Switches a capability to another registered model (or back to the environment/default when null). */
+/** Shared selections must exist in the live catalog; switches are audited and affect new work only. */
 export async function switchModel(capability: string, model: string | null, reason: string, actor: string) {
   const c = capabilities()[capability];
   if (!c) throw Object.assign(new Error("unknown capability"), { statusCode: 400 });
   if (!reason.trim()) throw Object.assign(new Error("a reason is required"), { statusCode: 400 });
   if (model !== null) {
-    const spec = MODELS[model];
+    const spec = modelSpec(model);
     if (!spec) throw Object.assign(new Error("unknown model"), { statusCode: 400 });
+    if (process.env.AIMAN_MODEL_CONFIG_PATH && !(await sharedModelCatalog(MODELS.default!)).includes(spec.model)) {
+      throw Object.assign(new Error("模型不在当前共享连接的实时目录中，请刷新模型目录"), { statusCode: 400 });
+    }
     if (!capabilityAcceptsModel(c, spec)) throw Object.assign(new Error("this capability needs a vision model"), { statusCode: 400 });
     if (!modelConfigured(spec)) throw Object.assign(new Error("model connection is not configured"), { statusCode: 400 });
   }

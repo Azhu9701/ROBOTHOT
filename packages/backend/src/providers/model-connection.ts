@@ -19,7 +19,7 @@ const sharedConfigSchema = z.object({
 
 /** Private snapshot for a single request; never serialize or log it. */
 export function modelConnection(spec: ModelSpec) {
-  const path = spec.key === "default" ? process.env.AIMAN_MODEL_CONFIG_PATH : undefined;
+  const path = spec.service === "llm" ? process.env.AIMAN_MODEL_CONFIG_PATH : undefined;
   if (path) {
     try {
       if (statSync(path).size > 16_384) throw new Error();
@@ -41,5 +41,38 @@ export function modelConfigured(spec: ModelSpec): boolean {
     return Boolean(spec.model && connection.baseUrl && connection.apiKey);
   } catch {
     return false;
+  }
+}
+
+/** Reads the same live /models catalog as the workbench; never falls back to presets. */
+export async function sharedModelCatalog(spec: ModelSpec): Promise<string[]> {
+  const { baseUrl, apiKey, revision } = modelConnection(spec);
+  try {
+    if (!baseUrl || !apiKey) throw new Error();
+    const response = await fetch(baseUrl.replace(/\/$/, "") + "/models", {
+      headers: { Authorization: "Bearer " + apiKey }, redirect: "error", signal: AbortSignal.timeout(15_000),
+    });
+    if (!response.ok) { await response.body?.cancel(); throw new Error(); }
+    const reader = response.body?.getReader();
+    if (!reader) throw new Error();
+    const chunks: Uint8Array[] = [];
+    let length = 0;
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        length += value.byteLength;
+        if (length > 1_048_576) throw new Error();
+        chunks.push(value);
+      }
+      const parsed = z.object({ data: z.array(z.object({ id: z.string().trim().min(1).max(200).regex(/^\S+$/u) })).max(5000) })
+        .parse(JSON.parse(Buffer.concat(chunks).toString("utf8")));
+      const current = modelConnection(spec);
+      if (current.revision !== revision || current.baseUrl !== baseUrl || current.apiKey !== apiKey) throw new Error();
+      return [...new Set(parsed.data.map(model => model.id))];
+    } catch (error) { await reader.cancel().catch(() => {}); throw error; }
+    finally { reader.releaseLock(); }
+  } catch {
+    throw Object.assign(new Error("共享模型目录读取失败，请刷新后重试"), { statusCode: 502 });
   }
 }
