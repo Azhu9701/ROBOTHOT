@@ -56,7 +56,7 @@ export const MODELS: Record<string, ModelSpec> = {
 export function modelSpec(key: string): ModelSpec | undefined {
   if (!process.env.AIMAN_MODEL_CONFIG_PATH || key === "default") return MODELS[key];
   if (!key || key.length > 200 || /\s/u.test(key)) return undefined;
-  return { ...MODELS.default!, key, model: key, extra: undefined, reasoningTokens: undefined, vision: false };
+  return { ...MODELS.default!, key, model: key, extra: undefined, vision: false };
 }
 
 export type ContentPart = { type: "text"; text: string } | { type: "image_url"; image_url: { url: string } };
@@ -214,7 +214,7 @@ export async function chatJson<S extends z.ZodType>(opts: ChatJsonOptions<S>): P
     // Unusable output: record it and let a later attempt pay for a fresh answer. A reasoning model that
     // reasoned up to the output limit leaves an empty or cut-off answer; say so, and where to give it room.
     const detail = response.choices?.[0]?.finish_reason === "length"
-      ? `output token limit reached (finish_reason=length): a reasoning model may have spent it reasoning; give it room with ${spec.key === "default" ? "LLM_REASONING_TOKENS" : `reasoningTokens on preset ${spec.key}`}. ${String(error)}`
+      ? `output token limit reached (finish_reason=length): a reasoning model may have spent it reasoning; give it room with ${process.env.AIMAN_MODEL_CONFIG_PATH || spec.key === "default" ? "LLM_REASONING_TOKENS" : `reasoningTokens on preset ${spec.key}`}. ${String(error)}`
       : String(error);
     await rejectReceivedResponse(receipt.receiptId, `unusable output: ${detail.slice(0, 500)}`);
     throw new ModelOutputError(`Model ${opts.model} returned unusable output for ${opts.subject}: ${detail.slice(0, 300)}`, receipt.receiptId);

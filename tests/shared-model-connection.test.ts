@@ -12,7 +12,15 @@ import { modelConnection, sharedModelCatalog } from "@aihot/backend/providers/mo
 
 const directory = await mkdtemp(join(tmpdir(), "shared-model-test-"));
 const file = join(directory, "connection.json");
-const provider = await stub((_hit, req) => req.url === "/v1/models" ? { data: [{ id: "robot-task-model" }, { id: "live/model-v4" }, { id: "live/model-v4" }] } : ({ choices: [{ message: { content: '{"ok":true}' } }], usage: { prompt_tokens: 1, completion_tokens: 1 } }));
+const provider = await stub((_hit, req) => {
+  if (req.url === "/v1/models") return { data: [{ id: "robot-task-model" }, { id: "live/model-v4" }, { id: "live/model-v4" }] };
+  const body = JSON.parse(req.body);
+  // Match the production failure: reasoning consumes the short task's entire output allowance.
+  if (body.messages?.some((m: { content: unknown }) => m.content === "reasoning-budget-regression") && body.max_tokens <= 1200) {
+    return { choices: [{ message: { content: "" }, finish_reason: "length" }], usage: { completion_tokens: 1200, completion_tokens_details: { reasoning_tokens: 1198 } } };
+  }
+  return { choices: [{ message: { content: '{"ok":true}' } }], usage: { prompt_tokens: 1, completion_tokens: 1 } };
+});
 Object.assign(process.env, { AIMAN_MODEL_CONFIG_PATH: file, LLM_MODEL: "robot-task-model", LLM_BASE_URL: "https://stale.invalid", LLM_API_KEY: "stale-key" });
 const save = async (revision: number, apiKey: string) => {
   await writeFile(file + ".tmp", JSON.stringify({ version: 1, revision, connection: { id: "caileme", baseUrl: provider.url + "/v1", apiKey }, defaultSelection: { model: "chat-model", api: "anthropic-messages" } }), { mode: 0o600 });
@@ -111,4 +119,22 @@ test("catalog failures never expose provider bodies or fall back to static names
     const [row] = await sql`SELECT count(*)::int AS n FROM receipts WHERE subject = ${subject}`;
     assert.equal(row!.n, 0);
   } finally { globalThis.fetch = fetcher; }
+});
+
+test("live catalog selections retain the explicit reasoning allowance and record the full request limit", async () => {
+  await save(5, "reasoning-test-key");
+  const previous = process.env.LLM_REASONING_TOKENS;
+  process.env.LLM_REASONING_TOKENS = "4096";
+  const subject = "shared-reasoning-" + tag();
+  try {
+    const result = await chatJson({ model: "live/model-v4", purpose: "invariant_test", subject, promptVersion: "reasoning-budget-1", system: "s", user: "reasoning-budget-regression", maxTokens: 1200, schema: z.object({ ok: z.boolean() }) });
+    assert.equal(result.data.ok, true);
+    const [receipt] = await sql`SELECT service, model, request FROM receipts WHERE subject = ${subject}`;
+    assert.equal(receipt!.service, "llm");
+    assert.equal(receipt!.model, "live/model-v4");
+    assert.equal(receipt!.request.maxTokens, 5296);
+  } finally {
+    if (previous === undefined) delete process.env.LLM_REASONING_TOKENS;
+    else process.env.LLM_REASONING_TOKENS = previous;
+  }
 });
