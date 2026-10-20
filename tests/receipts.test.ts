@@ -10,6 +10,7 @@ import { closeDb, sql } from "@aihot/backend/db";
 import { chatJson, ModelOutputError } from "@aihot/backend/providers/llm";
 import { embeddingsAvailable } from "@aihot/backend/providers/embeddings";
 import { BudgetExceededError, logicalKeyFor, markStalePendingReceipts, paidRequest, ReceiptUnknownError } from "@aihot/backend/providers/receipts";
+import { parseTranslateOutput } from "@aihot/backend/editorial/writing";
 import { autoReleaseUnknownReceipts } from "@aihot/backend/operations/recover";
 
 const usage = { prompt_tokens: 80, completion_tokens: 20, total_tokens: 100 };
@@ -132,6 +133,23 @@ test("an answer cut off at the output limit is a failed paid answer that says so
   } finally {
     process.env.DEEPSEEK_BASE_URL = original;
     await cut.close();
+  }
+});
+
+test("empty and truncated text answers fail before the permissive translation parser can mark them complete", async () => {
+  for (const [content, finish] of [["", "length"], [" \n\t", "stop"], ["title_zh: 标题\nsummary_zh: 尚未写完", "length"]]) {
+    const cut = await stub(() => ({ choices: [{ message: { content }, finish_reason: finish }], usage }));
+    const original = process.env.DEEPSEEK_BASE_URL;
+    const subject = `text-output-${tag()}`;
+    process.env.DEEPSEEK_BASE_URL = `${cut.url}/v1`;
+    try {
+      await assert.rejects(chatJson({ model: "deepseek-flash", purpose: "summarize_article", subject, promptVersion: "text-output-1", system: "", user: subject,
+        json: false, parse: parseTranslateOutput, schema: z.object({ titleZh: z.string(), summaryZh: z.string(), bodyZh: z.string() }) }), ModelOutputError);
+      const [receipt] = await sql`SELECT status, response FROM receipts WHERE subject = ${subject}`;
+      assert.equal(receipt!.status, "failed");
+      assert.equal(receipt!.response.choices[0].message.content, content, "keep the received answer for diagnosis");
+      assert.equal(cut.hits(), 1);
+    } finally { process.env.DEEPSEEK_BASE_URL = original; await cut.close(); }
   }
 });
 

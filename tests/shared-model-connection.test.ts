@@ -138,3 +138,27 @@ test("live catalog selections retain the explicit reasoning allowance and record
     else process.env.LLM_REASONING_TOKENS = previous;
   }
 });
+
+
+test("shared catalog selections retain explicit operator request fields without borrowing preset fields", async () => {
+  await save(6, "extra-test-key");
+  const previous = process.env.LLM_EXTRA_JSON;
+  process.env.LLM_EXTRA_JSON = JSON.stringify({ thinking: { type: "enabled" }, reasoning_effort: "low" });
+  const originalFetch = globalThis.fetch;
+  const bodies: Record<string, unknown>[] = [];
+  globalThis.fetch = async (input, init) => {
+    if (String(input).endsWith("/chat/completions")) bodies.push(JSON.parse(String(init?.body)));
+    return originalFetch(input, init);
+  };
+  try {
+    for (const model of ["default", "live/model-v4"]) await chatJson({ model, purpose: "invariant_test", subject: tag(), promptVersion: "explicit-extra-1", system: "s", user: "u", schema: z.object({ ok: z.boolean() }) });
+    assert.equal(bodies.length, 2);
+    for (const body of bodies) {
+      assert.equal(body.reasoning_effort, "low");
+      assert.deepEqual(body.thinking, { type: "enabled" });
+    }
+  } finally {
+    globalThis.fetch = originalFetch;
+    if (previous === undefined) delete process.env.LLM_EXTRA_JSON; else process.env.LLM_EXTRA_JSON = previous;
+  }
+});

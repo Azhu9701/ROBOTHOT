@@ -56,7 +56,7 @@ export const MODELS: Record<string, ModelSpec> = {
 export function modelSpec(key: string): ModelSpec | undefined {
   if (!process.env.AIMAN_MODEL_CONFIG_PATH || key === "default") return MODELS[key];
   if (!key || key.length > 200 || /\s/u.test(key)) return undefined;
-  return { ...MODELS.default!, key, model: key, extra: undefined, vision: false };
+  return { ...MODELS.default!, key, model: key, vision: false };
 }
 
 export type ContentPart = { type: "text"; text: string } | { type: "image_url"; image_url: { url: string } };
@@ -209,6 +209,8 @@ export async function chatJson<S extends z.ZodType>(opts: ChatJsonOptions<S>): P
   const content = response.choices?.[0]?.message?.content ?? "";
   let parsed: z.infer<S>;
   try {
+    if (response.choices?.[0]?.finish_reason === "length") throw new Error("Model answer was truncated");
+    if (typeof content !== "string" || !content.trim()) throw new Error("Model answer is empty");
     parsed = opts.schema.parse(opts.parse ? opts.parse(content) : extractJson(content));
   } catch (error) {
     // Unusable output: record it and let a later attempt pay for a fresh answer. A reasoning model that
