@@ -29,7 +29,7 @@ interface Route {
   step: Step;
   /** Not an editorial source: no analysis; the post goes straight to event grouping as discussion evidence. */
   signal: boolean;
-  historical: boolean;
+  priority: number;
 }
 
 /**
@@ -50,13 +50,16 @@ async function route(articleId: string, db: Db): Promise<Route | null> {
   const wantsBody = row.config.fetchPublicContent === true || !!row.config.detail || row.kind === "web_list";
   const needsPage = !signal && pageFetchable(row.url, row.kind) && (wantsBody || row.bare);
   const needsXArticle = row.kind === "x_search" && (!signal || (row.participation_mode === "hot_signal" && !historical));
-  return { step: pending && (needsPage || needsXArticle) ? "extract" : "analyze", signal, historical };
+  const configured = row.config.processingPriority;
+  const livePriority = typeof configured === "number" && Number.isInteger(configured) && configured >= 0 && configured <= 5 ? configured : PRIORITY.live;
+  const priority = historical ? PRIORITY.history : signal ? PRIORITY.liveSignal : livePriority;
+  return { step: pending && (needsPage || needsXArticle) ? "extract" : "analyze", signal, priority };
 }
 
 /**
  * Queue order (pg-boss serves higher priority first): live work before history, so a new source's
- * first import or a backfill never holds up today's news; discussion evidence waits behind reports
- * in the serial grouping queue, history behind both.
+ * first import or a backfill never holds up today's news. Explicit source priority orders live reports;
+ * discussion evidence waits behind reports in the serial grouping queue, history behind both.
  */
 const PRIORITY = { live: 0, liveSignal: -1, history: -2 } as const;
 
@@ -76,13 +79,13 @@ export async function queueProcessing(articleId: string, opts: { step?: Step; at
   if (!queued) return null;
   // Extraction and the sweep only carry articleId; retain the current evaluation's paid identity.
   const attemptTag = queued.processing_attempt_tag ?? undefined;
-  if (step === "extract") return enqueue(QUEUES.extractBody, { articleId }, { singletonKey: articleId, priority: r.historical ? PRIORITY.history : PRIORITY.live }, opts.db);
+  if (step === "extract") return enqueue(QUEUES.extractBody, { articleId }, { singletonKey: articleId, priority: r.priority }, opts.db);
   if (r.signal && !attemptTag) {
-    return enqueue(QUEUES.group, { articleId, signalOnly: true }, { singletonKey: articleId, priority: r.historical ? PRIORITY.history : PRIORITY.liveSignal }, opts.db);
+    return enqueue(QUEUES.group, { articleId, signalOnly: true }, { singletonKey: articleId, priority: r.priority }, opts.db);
   }
   const tagged = !!attemptTag;
   return enqueue(QUEUES.analyze, tagged ? { articleId, attemptTag } : { articleId },
-    { singletonKey: tagged ? `manual:analyze:${articleId}:${attemptTag}` : articleId, priority: r.historical ? PRIORITY.history : PRIORITY.live }, opts.db);
+    { singletonKey: tagged ? `manual:analyze:${articleId}:${attemptTag}` : articleId, priority: r.priority }, opts.db);
 }
 
 /**

@@ -15,7 +15,19 @@ ROBOTHOT 面向机器人产业读者与 Agent：整机、具身模型、感知�
 
 Boston Dynamics 的 `/feed/` 本次返回空订阅；The Robot Report 在真实采集器中返回403，Hugging Face连接失败，虽然另一个HTTP客户端能读到订阅，也未纳入种子。宇树目前只配置官方身份词和主题，未凭猜测添加采集地址。中国厂商、中文媒体和公众号的覆盖仍需补充已验证信源，付费采集服务没有因此启用。
 
-每个源默认只发摘要和原文链接，`site_fulltext`／`syndicate_fulltext` 均关闭。首次回填最多8条，避免导入大批历史文章。
+2026-10-20 用现有采集器验证并新增以下官方来源。GitHub JSON 接口保留发布正文与原链接并排除 `prerelease=true`；Early Access 等状态仍以原文为准，不能只看布尔标记。
+
+| 信源 | 采集入口 | 验证范围 |
+|---|---|---|
+| IsaacLab | [官方 Releases](https://api.github.com/repos/isaac-sim/IsaacLab/releases?per_page=10) | 今日 v3.0.0 为正式发布，NVIDIA 官网确认仓库身份 |
+| MuJoCo | [官方 Releases](https://api.github.com/repos/google-deepmind/mujoco/releases?per_page=10) | 最新 3.16.0 发布于 10 月 14 日，官网确认仓库身份 |
+| LeRobot | [官方 Releases](https://api.github.com/repos/huggingface/lerobot/releases?per_page=10) | 最新 v0.6.1 发布于 8 月 3 日，Hugging Face 文档确认仓库身份 |
+| Figure | [官方新闻](https://www.figure.ai/news) | 21 条标题／日期可读，按日期排序避免旧置顶充当新消息；3 篇正文可读 |
+| Physical Intelligence | [官方博客](https://www.pi.website/blog) | 8 条标题／日期可读，3 篇正文可读；只有日历日的日期不代表精确发布时间 |
+
+这五个新增源首次回填为 0，先建立监控起点，再按原有近 48 小时发现规则收录新消息；旧版本、旧新闻不会借接入时间变成今日资讯。NVIDIA RSS 和新增官方来源的实时处理优先级设为 3，原有研究源默认 0，让新发布不被论文积压挡住；不删除积压，也不改变精选标准。
+
+每个源默认只发摘要和原文链接，`site_fulltext`／`syndicate_fulltext` 均关闭。原有四个 RSS 首次回填最多 8 条，新增五源首次回填为 0。
 
 种子由 `scripts/seed.ts` 导入，只补充不存在的ID；不会覆盖管理员配置，删除种子项也不会删除或停用数据库中的旧源。已有实例改用机器人范围时，在后台核对旧AI源、订阅频率与已公开内容；本次代码更新不执行生产清理。
 

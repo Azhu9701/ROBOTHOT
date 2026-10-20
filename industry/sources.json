@@ -9,7 +9,8 @@
         "feedUrl": "https://developer.nvidia.com/blog/category/robotics/feed/",
         "_aihot": {
           "initialBackfillLimit": 8
-        }
+        },
+        "processingPriority": 3
       },
       "tier": "T1",
       "owner_entity_id": "nvidia",
@@ -83,6 +84,199 @@
       ],
       "site_fulltext": false,
       "syndicate_fulltext": false
+    },
+    {
+      "id": "json-isaaclab-releases",
+      "name": "IsaacLab · 官方版本发布",
+      "kind": "json_list",
+      "config": {
+        "url": "https://api.github.com/repos/isaac-sim/IsaacLab/releases?per_page=10",
+        "mode": "json_api",
+        "titlePaths": [
+          "name",
+          "tag_name"
+        ],
+        "summaryPaths": [
+          "body"
+        ],
+        "summaryIsBody": true,
+        "publishedAtPath": "published_at",
+        "externalIdPath": "id",
+        "urlTemplate": "{raw:html_url}",
+        "requireBoolean": {
+          "path": "prerelease",
+          "equals": false
+        },
+        "processingPriority": 3,
+        "_aihot": {
+          "initialBackfillLimit": 0
+        }
+      },
+      "tier": "T1",
+      "owner_entity_id": null,
+      "participation_mode": "editorial",
+      "interval_minutes": 120,
+      "site_fulltext": false,
+      "syndicate_fulltext": false,
+      "tags": [
+        "官方",
+        "开源",
+        "机器人"
+      ]
+    },
+    {
+      "id": "json-mujoco-releases",
+      "name": "MuJoCo · 官方版本发布",
+      "kind": "json_list",
+      "config": {
+        "url": "https://api.github.com/repos/google-deepmind/mujoco/releases?per_page=10",
+        "mode": "json_api",
+        "titlePaths": [
+          "name",
+          "tag_name"
+        ],
+        "summaryPaths": [
+          "body"
+        ],
+        "summaryIsBody": true,
+        "publishedAtPath": "published_at",
+        "externalIdPath": "id",
+        "urlTemplate": "{raw:html_url}",
+        "requireBoolean": {
+          "path": "prerelease",
+          "equals": false
+        },
+        "processingPriority": 3,
+        "_aihot": {
+          "initialBackfillLimit": 0
+        }
+      },
+      "tier": "T1",
+      "owner_entity_id": null,
+      "participation_mode": "editorial",
+      "interval_minutes": 120,
+      "site_fulltext": false,
+      "syndicate_fulltext": false,
+      "tags": [
+        "官方",
+        "开源",
+        "机器人"
+      ]
+    },
+    {
+      "id": "json-lerobot-releases",
+      "name": "LeRobot · 官方版本发布",
+      "kind": "json_list",
+      "config": {
+        "url": "https://api.github.com/repos/huggingface/lerobot/releases?per_page=10",
+        "mode": "json_api",
+        "titlePaths": [
+          "name",
+          "tag_name"
+        ],
+        "summaryPaths": [
+          "body"
+        ],
+        "summaryIsBody": true,
+        "publishedAtPath": "published_at",
+        "externalIdPath": "id",
+        "urlTemplate": "{raw:html_url}",
+        "requireBoolean": {
+          "path": "prerelease",
+          "equals": false
+        },
+        "processingPriority": 3,
+        "_aihot": {
+          "initialBackfillLimit": 0
+        }
+      },
+      "tier": "T1",
+      "owner_entity_id": null,
+      "participation_mode": "editorial",
+      "interval_minutes": 120,
+      "site_fulltext": false,
+      "syndicate_fulltext": false,
+      "tags": [
+        "官方",
+        "开源",
+        "机器人"
+      ]
+    },
+    {
+      "id": "web-figure",
+      "name": "Figure · 官方新闻",
+      "kind": "web_list",
+      "config": {
+        "url": "https://www.figure.ai/news",
+        "parseMode": "html",
+        "itemSelector": "a.article-list-item",
+        "linkSelector": "a.article-list-item",
+        "titleSelector": ".article-list-item__heading",
+        "publishedAtSelector": "time.article-list-item__publication-date",
+        "allowUrlPrefixes": [
+          "https://www.figure.ai/news/"
+        ],
+        "detail": {
+          "maxFetches": 5,
+          "publishedAtSelector": "time.article__publication-date",
+          "titleSelector": "article.article h1",
+          "summarySelector": "meta[name=\"description\"]"
+        },
+        "sortByPublishedAt": true,
+        "fetchPublicContent": true,
+        "processingPriority": 3,
+        "_aihot": {
+          "initialBackfillLimit": 0
+        }
+      },
+      "tier": "T1",
+      "owner_entity_id": null,
+      "participation_mode": "editorial",
+      "interval_minutes": 120,
+      "site_fulltext": false,
+      "syndicate_fulltext": false,
+      "tags": [
+        "官方",
+        "具身智能"
+      ]
+    },
+    {
+      "id": "web-physical-intelligence",
+      "name": "Physical Intelligence · 官方博客",
+      "kind": "web_list",
+      "config": {
+        "url": "https://www.pi.website/blog",
+        "parseMode": "html",
+        "itemSelector": "a[href^=\"/blog/\"]",
+        "linkSelector": "a[href^=\"/blog/\"]",
+        "titleSelector": "div[title]",
+        "publishedAtSelector": "div.text-muted-foreground.shrink-0",
+        "publishedAtUtcOffset": "+00:00",
+        "allowUrlPrefixes": [
+          "https://www.pi.website/blog/"
+        ],
+        "detail": {
+          "maxFetches": 5,
+          "publishedAtSelector": "meta[property=\"article:published_time\"]",
+          "titleSelector": "h1"
+        },
+        "sortByPublishedAt": true,
+        "fetchPublicContent": true,
+        "processingPriority": 3,
+        "_aihot": {
+          "initialBackfillLimit": 0
+        }
+      },
+      "tier": "T1",
+      "owner_entity_id": null,
+      "participation_mode": "editorial",
+      "interval_minutes": 120,
+      "site_fulltext": false,
+      "syndicate_fulltext": false,
+      "tags": [
+        "官方",
+        "具身智能"
+      ]
     }
   ]
 }
