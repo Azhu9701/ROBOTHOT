@@ -33,7 +33,11 @@ Boston Dynamics 的 `/feed/` 本次返回空订阅；The Robot Report 在真实�
 
 ## 分类、身份与兼容
 
-保留原有分类key、内容类型、主题slug与MCP前缀。新增人形、四足、机械臂、移动机器人、安全、ROS标签与主题，并把宇树与Boston Dynamics加入新闻编辑词表和防冒名校验。旧AI主题链接仍可读取，主题目录优先列机器人主题。
+保留原有分类key、内容类型、主题slug与MCP前缀。新增人形、四足、机械臂、移动机器人、安全、ROS标签与主题，并把宇树与Boston Dynamics加入新闻编辑词表和防冒名校验。旧 AI 主题链接仍可读取，但通用聊天、编码、创作等主题从默认目录和搜索建议隐藏。目录按机器人与具身技术、厂商与研究机构、研究工程与产业分组；新增 VLA、世界模型、仿真/Sim2Real、机器人学习、机器人数据、感知/控制等明确标签。新标签只作用于后续结构抽取，不按关键词给历史内容补分类。
+
+主题范围参考 [OpenVLA](https://openvla.github.io/)、[LeRobot](https://huggingface.co/docs/lerobot/en/index)、[Isaac Lab](https://isaac-sim.github.io/IsaacLab/main/index.html)、[MoveIt](https://moveit.ai/) 与 [Nav2](https://docs.nav2.org/rolling/)。它们提供编辑导航依据，不证明本站已覆盖相应内容。
+
+周报与月报只汇总已结束周期内的日报内容；没有可汇总条目时，自动任务返回 `skipped`，不发布空壳、不调用模型，也不记作生成失败。有日报内容补入后会重新尝试。日报窗口完全没有被评估资讯、数据库异常等真实失败仍需排查。
 
 词表是资讯主体识别配置，不是AIMAN的canonical identity。产品型号不作为公司别名，`G1`、`Go2`、`Atlas`、`Spot`不能仅凭名称匹配成公司。没有匹配到的身份或关系保持未知，不自动写入聚身之家的产品库和产业图谱。
 

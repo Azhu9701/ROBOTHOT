@@ -24,6 +24,8 @@ export interface Topic {
   name: string;
   group: TopicGroupKey;
   definition: string;
+  /** Hidden legacy topics keep stable URLs without appearing in the current directory. */
+  directory?: boolean;
   /** Companies: the subject id (industry/taxonomy.ts ENTITIES). */
   entityId: string | null;
   /** Tags that put a report in the topic: a company's subject tag, a direction's or a form's tags. */
@@ -37,7 +39,7 @@ export interface Topic {
 interface TopicFile {
   groups: TopicGroup[];
   topics: Array<{
-    slug: string; name: string; group: TopicGroupKey; entityId?: string; aliases?: string[]; tags?: string[]; definition: string;
+    slug: string; name: string; group: TopicGroupKey; entityId?: string; aliases?: string[]; tags?: string[]; definition: string; directory?: boolean;
   }>;
 }
 
@@ -60,6 +62,7 @@ export const TOPICS: Topic[] = file.topics.map((t) => ({
   name: t.name,
   group: t.group,
   definition: t.definition,
+  directory: t.directory !== false,
   entityId: t.entityId ?? null,
   tags: t.entityId ? [`entity:${t.entityId}`] : (t.tags ?? []),
   pattern: t.entityId ? titlePattern(t.name, t.entityId) : null,
@@ -80,7 +83,7 @@ export function topicLinks(slugs: string[]): TopicLink[] {
 
 /** Stable browse links in the same order as the topic directory, without its counts or modules. */
 export function topicBrowseLinks() {
-  return TOPICS.map(({ slug, name, group }) => ({ slug, name, group }));
+  return TOPICS.filter((t) => t.directory !== false).map(({ slug, name, group }) => ({ slug, name, group }));
 }
 
 /** One membership rule for topic discovery and a single topic's page and count. */
@@ -270,7 +273,7 @@ function summarize(t: Topic, seats: TopicMember[], now: Date, brands: Map<string
 export async function listTopicSummaries(): Promise<TopicsResponse> {
   const [index, brands] = await Promise.all([topicIndex(), companyBrands()]);
   const live = await currentSeats(TOPICS.flatMap((t) => index.bySlug.get(t.slug)!.slice(0, LATEST_CANDIDATES).map((s) => s.id)), new Date());
-  return { groups: TOPIC_GROUPS, topics: TOPICS.map((t) => summarize(t, index.bySlug.get(t.slug)!, index.at, brands, live)) };
+  return { groups: TOPIC_GROUPS, topics: TOPICS.filter((t) => t.directory !== false).map((t) => summarize(t, index.bySlug.get(t.slug)!, index.at, brands, live)) };
 }
 
 export interface TopicCount {

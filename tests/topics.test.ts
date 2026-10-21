@@ -17,7 +17,8 @@ import { closeDb, sql } from "@aihot/backend/db";
 import { upsertMaterial } from "@aihot/backend/content/materials";
 import { stopBoss } from "@aihot/backend/jobs/queue";
 import { publishArticle } from "@aihot/backend/publication/publish";
-import { TOPICS, loadTopicPage, listTopicSummaries, topicsOfStory } from "@aihot/backend/publication/topics";
+import { TOPICS, topicBrowseLinks, loadTopicPage, listTopicSummaries, topicsOfStory } from "@aihot/backend/publication/topics";
+import { CATEGORY_TAGS, TOPIC_TAGS, ENTITIES } from "@aihot/industry/taxonomy";
 import { buildApp } from "../apps/api/src/app.ts";
 
 const T = tag();
@@ -118,28 +119,28 @@ test("a company topic takes the articles about it, not the ones that only mentio
     const res = await app.inject({ method: "GET", url: `/api/site/items/${id}` });
     return (JSON.parse(res.body) as { topics: Array<{ slug: string }> }).topics.map((t) => t.slug);
   };
-  assert.deepEqual(await topicsOf(about), ["anthropic", "model-releases"]);
-  assert.deepEqual(await topicsOf(subpoena), ["openai", "model-releases"]);
+  assert.deepEqual(await topicsOf(about), ["model-releases", "anthropic"]);
+  assert.deepEqual(await topicsOf(subpoena), ["model-releases", "openai"]);
   assert.deepEqual(await topicsOf(pact), ["model-releases"]);
-  assert.deepEqual(await topicsOf(agent), ["agent", "model-releases"]);
+  assert.deepEqual(await topicsOf(agent), ["model-releases", "agent"]);
 });
 
 test("a story page names the topics of its reports", async () => {
   const launch = await story(`智能体框架 V2 发布 ${T}`);
   await report({ source: OFFICIAL, at: hoursAgo(26), title: `智能体框架 V2 发布 ${T}`, tags: ["Agent"], fact: await fact(launch.id, "发布 V2") });
-  assert.deepEqual(await topicsOfStory(launch.id), [{ slug: "agent", name: "Agent 智能体" }, { slug: "model-releases", name: "模型发布" }]);
+  assert.deepEqual(await topicsOfStory(launch.id), [{ slug: "model-releases", name: "具身模型发布" }, { slug: "agent", name: "Agent 智能体" }]);
 });
 
 test("withdrawn articles stay out of lists and counts", async () => {
-  const kept = await report({ at: hoursAgo(5), title: `Kimi 发布新模型 ${T}`, subjects: ["kimi"] });
-  const withdrawn = await report({ at: hoursAgo(4), title: `Kimi 撤回的消息 ${T}`, subjects: ["kimi"] });
+  const kept = await report({ at: hoursAgo(5), title: `NVIDIA 发布新模型 ${T}`, subjects: ["nvidia"] });
+  const withdrawn = await report({ at: hoursAgo(4), title: `NVIDIA 撤回的消息 ${T}`, subjects: ["nvidia"] });
   await sql`UPDATE publications SET visibility = 'withdrawn' WHERE article_id = ${withdrawn}`;
 
-  const data = await page("kimi");
+  const data = await page("nvidia");
   assert.deepEqual(ids(data.items), [kept]);
   assert.equal(data.topic.total, 1);
-  const summary = (await listTopicSummaries()).topics.find((t) => t.slug === "kimi")!;
-  assert.equal(summary.latest?.title, `Kimi 发布新模型 ${T}`, "the index shows the newest public article");
+  const summary = (await listTopicSummaries()).topics.find((t) => t.slug === "nvidia")!;
+  assert.equal(summary.latest?.title, `NVIDIA 发布新模型 ${T}`, "the index shows the newest public article");
 });
 
 test("robot topics use explicit subjects and tags, and withdraw content from both views", async () => {
@@ -160,6 +161,37 @@ test("every topic has a page; unknown topics and pages past the end have none", 
   assert.equal(await loadTopicPage("cursor", 2, new Date()), null);
   const index = await app.inject({ method: "GET", url: "/api/site/topics" });
   const body = JSON.parse(index.body) as { groups: Array<{ key: string }>; topics: Array<{ slug: string }> };
-  assert.deepEqual(body.groups.map((g) => g.key), ["company", "field", "genre"]);
-  assert.deepEqual(body.topics.map((t) => t.slug).sort(), TOPICS.map((t) => t.slug).sort(), "the index lists every topic");
+  assert.deepEqual(body.groups.map((g) => g.key), ["field", "company", "genre"]);
+  assert.deepEqual(body.topics.map((t) => t.slug).sort(), TOPICS.filter((t) => t.directory !== false).map((t) => t.slug).sort(), "the index lists directory topics");
+});
+
+
+test("robotics directory uses configured tags and preserves hidden legacy URLs", async () => {
+  const directory = (await listTopicSummaries()).topics;
+  assert.ok(directory.some(t => t.slug === "vla"));
+  assert.ok(directory.some(t => t.slug === "simulation"));
+  assert.ok(!directory.some(t => t.slug === "cursor" || t.slug === "openrouter"));
+  assert.ok(!topicBrowseLinks().some(t => t.slug === "cursor"));
+  assert.ok(await loadTopicPage("cursor", 1), "old stable URL remains readable");
+  const sim = await report({ at: hoursAgo(1), title: `机器人仿真训练 ${T}`, tags: ["仿真/Sim2Real", "机器人学习"], category: "paper" });
+  const chat = await report({ at: hoursAgo(1), title: `普通聊天产品 ${T}`, tags: ["多模态"], category: "ai-products" });
+  assert.ok((await members("simulation")).includes(sim));
+  assert.ok(!(await members("simulation")).includes(chat));
+  assert.ok((await members("robot-learning")).includes(sim));
+});
+
+
+test("directory topics refer to valid subjects or normalized classifier tags", () => {
+  const tags = new Set<string>([...CATEGORY_TAGS, ...TOPIC_TAGS]);
+  const slugs = new Set<string>();
+  for (const topic of TOPICS) {
+    assert.ok(!slugs.has(topic.slug), `duplicate slug ${topic.slug}`);
+    slugs.add(topic.slug);
+    if (topic.directory === false) continue;
+    if (topic.entityId) assert.ok(ENTITIES[topic.entityId], `unknown subject ${topic.entityId}`);
+    else {
+      assert.ok(topic.tags.length, `missing matching tags for ${topic.slug}`);
+      for (const tag of topic.tags) assert.ok(tags.has(tag), `unknown classifier tag ${tag}`);
+    }
+  }
 });

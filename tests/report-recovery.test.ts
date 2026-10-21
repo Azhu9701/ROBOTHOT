@@ -86,3 +86,22 @@ test("empty older gaps cannot starve a later daily, weekly or monthly, and failu
     assert.ok(await report(kind!, key!), `${kind} ${key} was recovered past the empty gaps`);
   }
 });
+
+test("empty complete periods are skipped without model calls or fabricated issues, then retried when data arrives", async () => {
+  await item("2024-02-19");
+  await composeDaily("2024-02-19");
+  const now = editionAt("daily", "2024-02-19", 3 * 3600);
+  const calls = provider.hits();
+  const empty = await composeDueReports(now);
+  assert.deepEqual(empty.failed, []);
+  assert.deepEqual(empty.skipped, ["weekly:2024-W07", "monthly:2024-01"]);
+  assert.equal(provider.hits(), calls);
+  assert.equal(await report("weekly", "2024-W07"), undefined);
+  assert.equal(await report("monthly", "2024-01"), undefined);
+  await item("2024-02-18");
+  await composeDaily("2024-02-18");
+  const recovered = await composeDueReports(now);
+  assert.ok(recovered.generated.includes("weekly:2024-W07"));
+  assert.deepEqual(recovered.skipped, ["monthly:2024-01"]);
+  assert.ok(await report("weekly", "2024-W07"));
+});

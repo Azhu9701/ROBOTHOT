@@ -56,7 +56,8 @@
 - `ITEM_TYPES`：内容类型，和评分提示词里的权重表对应，改了要一起改提示词。
 - `topics.json`：主题目录（`/topics`）。站点启动时读取，改完重新构建（`docker compose up -d --build`）才生效。分三组：`company`（公司与机构）、`field`（方向）、`genre`（内容形态）。`slug` 上线后不要改。
   - `company` 主题用 `entityId`（`ENTITIES` 的 id）收以这家公司为主体的报道；一篇报道的主体有几家公司时，标题里点了它的名才算。可选：`aliases`（搜索框里只搜这个词，也能找出这家公司的报道）。
-  - `field` 和 `genre` 主题用 `tags` 收打了这些标签的报道。
+  - `field` 和 `genre` 主题用 `tags` 收打了这些标签的报道。标签须存在于分类词表，否则结构抽取不能产生该标签。
+  - `directory: false` 隐藏不再主推的旧主题：目录和搜索建议不列出，旧 URL、归属规则和历史内容仍保留。默认展示，不删除旧 slug。
 
 ## 3. 信源：`industry/sources.json`
 
