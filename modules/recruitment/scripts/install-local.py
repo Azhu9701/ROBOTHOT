@@ -34,7 +34,7 @@ def prepare():
             "AIHOT_DATA_DIR": str(RUNTIME / "data"), "AIHOT_CREDENTIALS_DIR": str(RUNTIME / "unused-credentials"),
             "SITE_URL": "http://127.0.0.1:3034", "API_PORT": "3033", "API_HOST": "127.0.0.1",
             "API_BASE_URL": "http://127.0.0.1:3033", "WEB_PORT": "3034", "WEB_HOST": "127.0.0.1",
-            "NODE_ENV": "production", "RECRUITMENT_ENABLED": "true", "COLLECT_ENABLED": "true",
+            "NODE_ENV": "production", "RECRUITMENT_ENABLED": "true", "RECRUITMENT_BROWSER_ENABLED": "true", "COLLECT_ENABLED": "true",
             "MODEL_CALLS_ENABLED": "false", "FEISHU_CONTENT_PUSH_ENABLED": "false",
             "FEISHU_INTERNAL_ENABLED": "false", "INDEXNOW_SUBMIT_ENABLED": "false",
             "PATH": "/Users/mac/node24/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin",

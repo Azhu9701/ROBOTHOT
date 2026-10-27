@@ -2,7 +2,8 @@ import { sql } from "@aihot/backend/db";
 import { guardedFetch } from "@aihot/backend/lib/http-fetch";
 import { board, careerLinks, embeddedBoard, hash, parseApi, parseHtml, publicUrl, unique } from "./parse.ts";
 import type { Source, Snapshot, Posting } from "../types.ts";
-import { CAREER_SEEDS } from "../seeds.ts";
+import { readFeishu } from "./feishu-browser.ts";
+import { CAREER_SEEDS, CAREER_BOARD_SEEDS } from "../seeds.ts";
 
 const WORLD = "https://www.aiman.world";
 export const enabled = () => process.env.COLLECT_ENABLED === "true" && process.env.RECRUITMENT_ENABLED === "true";
@@ -51,21 +52,37 @@ export async function discoverSource(source: Source) {
     links = [seed, ...links];
     evidence.curatedOfficialPage = seed;
   }
+  const boardSeed=CAREER_BOARD_SEEDS[source.company];
+  if(boardSeed && new URL(official).hostname.replace(/^www\./,'')===boardSeed.officialHost && board(boardSeed.url)){
+    await getPage(boardSeed.linkedFrom);links=[boardSeed.url,...links];
+    Object.assign(evidence,{curatedBoard:boardSeed.url,curatedLinkedFrom:boardSeed.linkedFrom,curatedVerifiedAt:boardSeed.verifiedAt});
+  }
   // Some companies put the board itself in the footer or an iframe.
   const direct = embeddedBoard(home.body, home.url);
   if (direct) links = [direct.link, ...links];
-  for (const url of [...new Set(links)]) {
-    const career = await getPage(url);
-    const ats = board(career.url) || embeddedBoard(career.body, career.url);
-    Object.assign(evidence, { linkedFrom: home.url, careerUrl: career.url, careerHash: hash(career.body), boardLink: ats && "link" in ats ? ats.link : career.url });
-    await sql.begin(async tx => {
-    if (source.endpoint && source.endpoint !== (ats?.endpoint || career.url)) await tx`
-      UPDATE recruitment_jobs SET missing_since=COALESCE(missing_since,now()) WHERE company=${source.company}`;
-    await tx`UPDATE recruitment_sources SET official_url=${official}, career_url=${career.url},
-      provider=${ats?.provider || "html"}, endpoint=${ats?.endpoint || career.url}, status='ready',
-      discovered_at=now(), evidence=${tx.json(evidence)}, last_error=NULL WHERE company=${source.company}`;
+  const candidates=[...new Set(links)].map(url=>({url,from:home.url,depth:0}));
+  const seen=new Set<string>();let fallback:{url:string;body:string;from:string}|null=null;let failed:Error|null=null;
+  for(let i=0;i<candidates.length && i<10;i++) {
+    const candidate=candidates[i];if(seen.has(candidate.url))continue;seen.add(candidate.url);
+    let career;try{career=await getPage(candidate.url);}catch(e){failed=e as Error;continue;}
+    const ats=board(career.url)||embeddedBoard(career.body,career.url);
+    const supported=!!ats||parseHtml(career.body,career.url).supported;
+    if(!fallback)fallback={...career,from:candidate.from};
+    if(candidate.depth<1)for(const url of careerLinks(career.body,career.url))if(!seen.has(url))candidates.push({url,from:career.url,depth:1});
+    if(!supported)continue;
+    Object.assign(evidence,{linkedFrom:candidate.from,careerUrl:career.url,careerHash:hash(career.body),boardLink:ats && 'link' in ats ? ats.link : career.url});
+    await save(career.url,ats?.provider||'html',ats?.endpoint||career.url);return;
+  }
+  if(fallback){
+    Object.assign(evidence,{linkedFrom:fallback.from,careerUrl:fallback.url,careerHash:hash(fallback.body)});
+    await save(fallback.url,'html',fallback.url);return;
+  }
+  if(failed)throw failed;
+  async function save(career:string,provider:string,endpoint:string){
+    await sql.begin(async tx=>{
+      if(source.endpoint && source.endpoint!==endpoint)await tx`UPDATE recruitment_jobs SET missing_since=COALESCE(missing_since,now()) WHERE company=${source.company}`;
+      await tx`UPDATE recruitment_sources SET official_url=${official},career_url=${career},provider=${provider},endpoint=${endpoint},status='ready',discovered_at=now(),evidence=${tx.json(evidence)},last_error=NULL WHERE company=${source.company}`;
     });
-    return;
   }
   await sql`UPDATE recruitment_sources SET official_url=${official}, career_url=NULL, provider=NULL, endpoint=NULL,
     status='no_career_link', discovered_at=now(), evidence=${sql.json(evidence)}, last_error=NULL WHERE company=${source.company}`;
@@ -86,6 +103,21 @@ export async function discoverDue(limit = 20) {
 }
 export async function readSnapshot(source: Source): Promise<Snapshot> {
   if (!source.endpoint || !source.career_url) throw new Error("source not ready");
+  if(source.provider==='feishu')return readFeishu(source);
+  if(source.provider==='workday'){
+    const origin=new URL(source.endpoint);const site=origin.pathname.split('/')[4];
+    const base=origin.origin+'/'+site;const jobs:Posting[]=[];const hashes:string[]=[];let total:number|null=null;
+    for(let offset=0;offset<10000;offset+=20){
+      const r=await guardedFetch(source.endpoint,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({appliedFacets:{},limit:20,offset,searchText:''}),timeoutMs:25000,maxBytes:5*1024*1024});
+      if(r.status!==200)throw new Error('source_http_'+r.status);
+      const raw=r.text();const data=JSON.parse(raw);const batch=parseApi('workday',data,base);
+      if(total===null)total=data.total;else if(data.total!==0 && total!==data.total)throw new Error('Workday total changed; incomplete snapshot'); // Workday reports total only on its first page.
+      jobs.push(...batch);hashes.push(hash(raw));
+      if(jobs.length===total){const uniqueJobs=unique(jobs);if(uniqueJobs.length!==total)throw new Error('duplicate Workday page');return {jobs:uniqueJobs,complete:true,hash:hash(hashes.join(':'))};}
+      if(!batch.length || jobs.length>total!)throw new Error('incomplete Workday page');
+    }
+    throw new Error('Workday page limit reached');
+  }
   if (source.provider === "lever") {
     const jobs: Posting[] = []; const hashes: string[] = [];
     for (let skip = 0; skip < 10000; skip += 100) {

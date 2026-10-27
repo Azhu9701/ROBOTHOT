@@ -33,3 +33,27 @@ test("structured countries and secondary locations survive without guessing from
   const lever=parseApi('lever',[{text:'Engineer',hostedUrl:'/jobs/2',categories:{location:'Remote - US'}}],'https://robot.example');
   assert.equal(lever[0].locations?.[0].raw,'Remote - US');
 });
+
+test('career discovery ignores placeholder/template links and recognizes official Workday boards',()=>{
+  assert.deepEqual(careerLinks('<a href="#">Careers</a><a href="https://framer.com/projects/new?duplicate=abc">Join us</a><a href="/careers/job-listings">Job Listings</a>','https://apptronik.com'),['https://apptronik.com/careers/job-listings']);
+  assert.deepEqual(board('https://bostondynamics.wd1.myworkdayjobs.com/en-US/Boston_Dynamics/introduceYourself'),{provider:'workday',endpoint:'https://bostondynamics.wd1.myworkdayjobs.com/wday/cxs/bostondynamics/Boston_Dynamics/jobs'});
+  assert.equal(board('https://bostondynamics.wd1.myworkdayjobs.com.evil.test/Boston_Dynamics'),null);
+});
+test('Workday preserves the original employer URL and never guesses relative posting dates',()=>{
+  const d=parseApi('workday',{total:1,jobPostings:[{title:'Atlas Engineer',externalPath:'/job/Waltham-MA/Engineer_R123',locationsText:'Waltham, MA',postedOn:'Posted 3 Days Ago'}]},'https://bostondynamics.wd1.myworkdayjobs.com/Boston_Dynamics');
+  assert.equal(d[0].url,'https://bostondynamics.wd1.myworkdayjobs.com/Boston_Dynamics/job/Waltham-MA/Engineer_R123');assert.equal(d[0].postedAt,null);
+  assert.throws(()=>parseApi('workday',{total:1,jobPostings:[{title:'Invalid',externalPath:'https://evil.test/job/1'}]},'https://example.test'));
+});
+
+test('Feishu keeps source address hierarchy and absolute publication metadata without descriptions',()=>{
+ const d=parseApi('feishu',{code:0,data:{count:1,job_post_list:[{id:'12345',title:'数据采集员',publish_time:1792047350106,description:'not stored',city_list:[{name:'杭州'}],recruit_type:{name:'全职'},job_post_info:{address_list:[{city:{name:'杭州'},state:{name:'浙江'},country:{country_code:'CN_1'}}]}}]}},'https://robot.jobs.feishu.cn');
+ assert.equal(d[0].url,'https://robot.jobs.feishu.cn/index/position/12345/detail');assert.equal(d[0].locations?.[0].country,'CN');assert.equal(d[0].locations?.[0].region,'浙江');assert.equal(d[0].postedAt,new Date(1792047350106).toISOString());assert.equal('description' in d[0],false);
+ assert.deepEqual(board('https://robot.jobs.feishu.cn/index'),{provider:'feishu',endpoint:'https://robot.jobs.feishu.cn/index'});
+ assert.equal(board('https://robot.jobs.feishu.cn.evil.test/index'),null);
+ assert.throws(()=>parseApi('feishu',{code:403,data:{}},'https://robot.jobs.feishu.cn'));
+});
+
+test('company hiring portals are never interpreted as individual roles',()=>{
+ const html='<a href="https://maker.haier.net/client/job/index">社会招聘 SOCIAL RECRUITMENT</a><a href="https://www.zhipin.com/gongsi/job/company.html">申请岗位</a><a href="/jobs/engineer">Explore Opportunities</a>';
+ const d=parseHtml(html,'https://robot.example/careers');assert.equal(d.jobs.length,0);assert.equal(d.supported,false);
+});

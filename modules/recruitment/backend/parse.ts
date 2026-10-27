@@ -18,9 +18,10 @@ export function careerLinks(html: string, base: string): string[] {
   const $ = load(html);
   return [...new Set($("a[href]").toArray().flatMap((el) => {
     const href = $(el).attr("href")!;
+    if (!href || href.startsWith("#") || /(?:^|\.)framer\.com$/i.test(new URL(publicUrl(href,base)||base).hostname)) return [];
     const label = $(el).text().replace(/\s+/g, " ").trim();
-    const matched = /careers?|join (?:us|our team)|open (?:roles|positions)|招聘|招贤纳士|加入我们|人才招聘/i.test(label)
-      || /\/(?:careers?|jobs|join-us)(?:[/?#]|$)/i.test(href);
+    const matched = /careers?|join\s*(?:us|our team)|open (?:roles|positions)|we['’]re hiring|招聘|招贤纳士|加入我们|人才招聘|诚聘英才|採用|채용|stellenangebote|karriere/i.test(label)
+      || /\/(?:careers?|jobs|join[-_]?us|recruit(?:ment)?|zhaopin)(?:[/?#]|$)/i.test(href);
     const url = matched ? publicUrl(href, base) : null;
     return url ? [url] : [];
   }))].slice(0, 5);
@@ -36,6 +37,12 @@ export function board(raw: string): { provider: string; endpoint: string } | nul
       return { provider: "lever", endpoint: `https://${u.hostname === "jobs.eu.lever.co" ? "api.eu.lever.co" : "api.lever.co"}/v0/postings/${slug}` };
     if (u.hostname === "jobs.ashbyhq.com" && slug && /^[\w-]+$/.test(slug))
       return { provider: "ashby", endpoint: `https://api.ashbyhq.com/posting-api/job-board/${slug}` };
+    if(/^[\w-]+\.jobs\.feishu\.cn$/.test(u.hostname))return {provider:'feishu',endpoint:u.href};
+    if (/^[a-z0-9-]+\.wd[0-9]+\.myworkdayjobs\.com$/.test(u.hostname)) {
+      const parts=u.pathname.split('/').filter(Boolean);if(/^[a-z]{2}-[A-Z]{2}$/.test(parts[0]||''))parts.shift();
+      const site=parts[0];const tenant=u.hostname.split('.')[0];
+      if(site && /^[\w-]+$/.test(site))return {provider:'workday',endpoint:`${u.origin}/wday/cxs/${tenant}/${site}/jobs`};
+    }
   } catch { /* Not an ATS URL. */ }
   return null;
 }
@@ -72,6 +79,26 @@ function posting(value: Record<string, any>, base: string): Posting | null {
     postedAt: date(value.datePosted ?? value.publishedAt), validThrough: date(value.validThrough) };
 }
 export function parseApi(provider: string, data: any, base: string): Posting[] {
+  if(provider==='feishu') {
+    if(data?.code!==0||!Array.isArray(data.data?.job_post_list)||!Number.isInteger(data.data.count)||data.data.count<0)throw new Error('invalid public Feishu job list');
+    const jobs=data.data.job_post_list.map((v:any)=>{
+      if(typeof v.id!=='string'||!/^\d+$/.test(v.id))throw new Error('invalid job identifier');
+      const addresses=v.job_post_info?.address_list||[];
+      const locations=addresses.map((p:any)=>({raw:text(p.city?.name||p.name),country:text(p.country?.country_code)?.split('_')[0]||null,region:text(p.state?.name),city:text(p.city?.name)}));
+      const job=posting({title:v.title,url:base+'/index/position/'+v.id+'/detail',location:(v.city_list||[]).map((p:any)=>p.name).filter(Boolean).join(' / '),employmentType:v.recruit_type?.name,datePosted:typeof v.publish_time==='number'?new Date(v.publish_time).toISOString():null},base);
+      return job&&{...job,...(locations.length?{locations}: {})};
+    });
+    if(jobs.some((j:Posting|null)=>!j))throw new Error('invalid public Feishu job');return unique(jobs as Posting[]);
+  }
+  if(provider==='workday') {
+    if(!Array.isArray(data?.jobPostings)||!Number.isInteger(data.total)||data.total<0)throw new Error('invalid Workday response');
+    const jobs=data.jobPostings.map((v:any)=>{
+      if(typeof v.externalPath!=='string'||!v.externalPath.startsWith('/job/'))throw new Error('invalid Workday original URL');
+      return posting({title:v.title,url:base+v.externalPath,location:v.locationsText},base);
+    });
+    if(jobs.some((j:Posting|null)=>!j))throw new Error('invalid Workday job');
+    return unique(jobs as Posting[]);
+  }
   const values = provider === "lever" ? data : data?.jobs;
   if (!Array.isArray(values)) throw new Error("invalid job board response");
   const listed = values.filter(v => v && typeof v === "object" && v.isListed !== false);
