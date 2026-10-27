@@ -1,4 +1,6 @@
 export interface Posting {
+  locations?: Array<{raw:string|null;country:string|null;region:string|null;city:string|null}>;
+  remote?: boolean | null;
   url: string;
   title: string;
   location: string | null;

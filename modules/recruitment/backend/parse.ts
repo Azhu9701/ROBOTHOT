@@ -62,7 +62,11 @@ function posting(value: Record<string, any>, base: string): Posting | null {
   const title = text(value.title || value.text || value.name);
   const url = publicUrl(value.url || value.absolute_url || value.hostedUrl || value.jobUrl, base);
   if (!title || !url) return null;
-  return { title, url, location: text(value.location?.name ?? value.location ?? value.categories?.location),
+  const locations = [value, ...(Array.isArray(value.secondaryLocations) ? value.secondaryLocations : [])].map(v => {
+    const address = v.address?.postalAddress || v.jobLocation?.address || {};
+    return {raw:text(v.location?.name ?? v.location ?? v.categories?.location),country:text(address.addressCountry?.name ?? address.addressCountry),region:text(address.addressRegion),city:text(address.addressLocality)};
+  });
+  return { title, url, locations, remote:typeof value.isRemote === "boolean" ? value.isRemote : null, location: text(value.location?.name ?? value.location ?? value.categories?.location),
     department: text(value.departments?.[0]?.name ?? value.department ?? value.categories?.team),
     employmentType: text(value.employmentType ?? value.categories?.commitment),
     postedAt: date(value.datePosted ?? value.publishedAt), validThrough: date(value.validThrough) };

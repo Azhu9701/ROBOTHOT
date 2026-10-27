@@ -1,3 +1,6 @@
+import { adminHandler } from "../../apps/api/src/routes/admin-auth.ts";
+import { actorOf } from "@aihot/backend/admin/auth";
+import { importRecruitment } from "./backend/transfer.ts";
 import { z } from "zod";
 import { defineServerModule } from "@aihot/backend/modules";
 import { enabled, runPipeline } from "./backend/pipeline.ts";
@@ -5,9 +8,11 @@ import { readJobs, jobsMarkdown } from "./backend/publication.ts";
 export default defineServerModule({
   name: "recruitment",
   http(app) {
+    app.post("/api/admin/recruitment/import", adminHandler(async (req,_reply,admin)=>importRecruitment(req.body,actorOf(admin))));
     app.get("/api/v1/jobs", async (req, reply) => {
       const query = z.object({ q: z.string().max(100).optional(), company: z.string().max(200).optional(),
-        status: z.enum(["observed", "uncertain", "all"]).optional(), offset: z.coerce.number().int().min(0).max(100000).optional() }).strict().safeParse(req.query);
+        country:z.string().regex(/^(?:[A-Z]{2}|unknown)$/).optional(), region:z.string().max(200).optional(),
+        status: z.enum(["observed", "uncertain", "expired", "stale", "unconfirmed", "all"]).optional(), offset: z.coerce.number().int().min(0).max(100000).optional() }).strict().safeParse(req.query);
       if (!query.success) return reply.code(400).send({ error: "invalid_query" });
       return reply.header("Cache-Control", "no-store").send(await readJobs(query.data));
     });

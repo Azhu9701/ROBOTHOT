@@ -26,3 +26,10 @@ test("JSON-LD handles arrays and graphs without copying descriptions or guessing
   assert.equal("description" in d.jobs[0], false); assert.equal(d.complete, false);
   assert.deepEqual(parseApi("ashby", { jobs:[{title:"Hidden",jobUrl:"/hidden",isListed:false}] }, "https://robot.example/"), []);
 });
+
+test("structured countries and secondary locations survive without guessing from headquarters",()=>{
+  const d=parseApi('ashby',{jobs:[{title:'Engineer',jobUrl:'/jobs/1',location:'Moss',address:{postalAddress:{addressCountry:'Norway',addressRegion:'Østfold',addressLocality:'Moss'}},secondaryLocations:[{location:'San Carlos, CA',address:{postalAddress:{addressCountry:'United States',addressRegion:'California'}}}]}]},'https://robot.example');
+  assert.equal(d[0].locations?.[0].country,'Norway');assert.equal(d[0].locations?.[1].country,'United States');
+  const lever=parseApi('lever',[{text:'Engineer',hostedUrl:'/jobs/2',categories:{location:'Remote - US'}}],'https://robot.example');
+  assert.equal(lever[0].locations?.[0].raw,'Remote - US');
+});
