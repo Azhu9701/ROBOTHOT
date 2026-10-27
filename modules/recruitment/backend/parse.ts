@@ -3,13 +3,16 @@ import { load } from "cheerio";
 import type { Posting } from "../types.ts";
 
 export const hash = (text: string) => createHash("sha256").update(text).digest("hex");
+// Official custom Feishu domains, verified through each company's linked career page.
+export const isFeishuHost = (host:string) => /^[\w-]+\.jobs\.feishu\.cn$/.test(host) || ['career.limxdynamics.com','careers.kinetixai.cn'].includes(host);
 const text = (x: unknown): string | null => typeof x === "string" && x.trim() ? x.trim().slice(0, 500) : null;
 export function publicUrl(raw: unknown, base?: string): string | null {
   try {
     if (typeof raw !== "string") return null;
     const u = new URL(raw, base);
     if (!/^https?:$/.test(u.protocol) || u.username || u.password) return null;
-    u.hash = "";
+    // Moka's public role identifier lives in the fragment, unlike tracking anchors.
+    if(!(u.hostname==='app.mokahr.com' && /^#\/job\/[\w-]+$/.test(u.hash)))u.hash = "";
     for (const key of [...u.searchParams.keys()]) if (/^(utm_|gh_src$|source$|ref$)/i.test(key)) u.searchParams.delete(key);
     return u.href;
   } catch { return null; }
@@ -35,9 +38,15 @@ export function board(raw: string): { provider: string; endpoint: string } | nul
     }
     if (["jobs.lever.co", "jobs.eu.lever.co"].includes(u.hostname) && slug && /^[\w-]+$/.test(slug))
       return { provider: "lever", endpoint: `https://${u.hostname === "jobs.eu.lever.co" ? "api.eu.lever.co" : "api.lever.co"}/v0/postings/${slug}` };
+    if(u.hostname==='app.mokahr.com' && /^\/(?:social|campus)-recruitment\/[\w-]+\/\d+\/?$/.test(u.pathname))
+      return {provider:'moka',endpoint:u.href};
     if (u.hostname === "jobs.ashbyhq.com" && slug && /^[\w-]+$/.test(slug))
       return { provider: "ashby", endpoint: `https://api.ashbyhq.com/posting-api/job-board/${slug}` };
-    if(/^[\w-]+\.jobs\.feishu\.cn$/.test(u.hostname))return {provider:'feishu',endpoint:u.href};
+    if(isFeishuHost(u.hostname)){
+      const detail=u.pathname.match(/^(\/[^/]+)\/position\/(?:\d+\/detail|detail\/\d+)\/?$/);
+      if(detail)u.pathname=detail[1]+'/position/list';
+      return {provider:'feishu',endpoint:u.href};
+    }
     if (/^[a-z0-9-]+\.wd[0-9]+\.myworkdayjobs\.com$/.test(u.hostname)) {
       const parts=u.pathname.split('/').filter(Boolean);if(/^[a-z]{2}-[A-Z]{2}$/.test(parts[0]||''))parts.shift();
       const site=parts[0];const tenant=u.hostname.split('.')[0];
@@ -48,7 +57,7 @@ export function board(raw: string): { provider: string; endpoint: string } | nul
 }
 export function embeddedBoard(html: string, base: string) {
   const $ = load(html);
-  for (const el of $("a[href],iframe[src],script[src]").toArray()) {
+  for (const el of $("a[href],iframe[src],script[src],link[rel=preload][href]").toArray()) {
     const url = publicUrl($(el).attr("href") || $(el).attr("src"), base);
     const found = url && board(url);
     if (found) return { ...found, link: url };
@@ -71,7 +80,7 @@ function posting(value: Record<string, any>, base: string): Posting | null {
   if (!title || !url) return null;
   const locations = [value, ...(Array.isArray(value.secondaryLocations) ? value.secondaryLocations : [])].map(v => {
     const address = v.address?.postalAddress || v.jobLocation?.address || {};
-    return {raw:text(v.location?.name ?? v.location ?? v.categories?.location),country:text(address.addressCountry?.name ?? address.addressCountry),region:text(address.addressRegion),city:text(address.addressLocality)};
+    return {raw:text(v.location?.name ?? v.location ?? v.categories?.location)?.replace(/[、·]/g,' / ')||null,country:text(address.addressCountry?.name ?? address.addressCountry),region:text(address.addressRegion),city:text(address.addressLocality)};
   });
   return { title, url, locations, remote:typeof value.isRemote === "boolean" ? value.isRemote : null, location: text(value.location?.name ?? value.location ?? value.categories?.location),
     department: text(value.departments?.[0]?.name ?? value.department ?? value.categories?.team),
@@ -85,7 +94,8 @@ export function parseApi(provider: string, data: any, base: string): Posting[] {
       if(typeof v.id!=='string'||!/^\d+$/.test(v.id))throw new Error('invalid job identifier');
       const addresses=v.job_post_info?.address_list||[];
       const locations=addresses.map((p:any)=>({raw:text(p.city?.name||p.name),country:text(p.country?.country_code)?.split('_')[0]||null,region:text(p.state?.name),city:text(p.city?.name)}));
-      const job=posting({title:v.title,url:base+'/index/position/'+v.id+'/detail',location:(v.city_list||[]).map((p:any)=>p.name).filter(Boolean).join(' / '),employmentType:v.recruit_type?.name,datePosted:typeof v.publish_time==='number'?new Date(v.publish_time).toISOString():null},base);
+      const prefix=new URL(base).pathname.match(/^\/([^/]+)\/position\//)?.[1]||'index';
+      const job=posting({title:v.title,url:new URL('/'+prefix+'/position/'+v.id+'/detail',base).href,location:(v.city_list||[]).map((p:any)=>p.name).filter(Boolean).join(' / '),employmentType:v.recruit_type?.name,datePosted:typeof v.publish_time==='number'?new Date(v.publish_time).toISOString():null},base);
       return job&&{...job,...(locations.length?{locations}: {})};
     });
     if(jobs.some((j:Posting|null)=>!j))throw new Error('invalid public Feishu job');return unique(jobs as Posting[]);
@@ -107,6 +117,15 @@ export function parseApi(provider: string, data: any, base: string): Posting[] {
   if (provider === "greenhouse" && data.meta?.total !== undefined && data.meta.total !== values.length) throw new Error("incomplete job board response");
   return unique(jobs as Posting[]);
 }
+// Only verified employer layouts; navigation links are never treated as job cards.
+const HTML_CARDS:Record<string,[string,string,string,string]>={
+  'weaverobotics.com':['a[href^="/careers/"]','.type-h2','.type-meta',''],
+  'roboparty.com':['a[href^="/join-us/"][class*="jobLink"]','h3','[class*="jobMeta"]','[class*="jobContent"] p'],
+  'lightwheel.ai':['a[href^="/careers/"]','h4','p',''],
+  'xingchidongli.com':['a[href^="/zh-CN/careers/"]','h3','small','span'],
+  'visionone.tech':['a[href^="/careers/"]','h2,h3','',''],
+  'droidup.com':['a[href^="/jiaruwomen/"]','h3','',''],
+};
 export function parseHtml(html: string, base: string): { jobs: Posting[]; complete: boolean; supported: boolean } {
   const $ = load(html);
   if (new URL(base).hostname.replace(/^www\./, "") === "unitree.com") {
@@ -123,6 +142,27 @@ export function parseHtml(html: string, base: string): { jobs: Posting[]; comple
     if (jobs.length) return { jobs: unique(jobs), complete: false, supported: true };
   }
   const jobs: Posting[] = [];
+  const host=new URL(base).hostname.replace(/^www\./,'');
+  const cards=HTML_CARDS[host];
+  if(cards)for(const el of $(cards[0]).toArray()){
+    const field=(selector:string)=>selector ? text($(el).find(selector).first().text().replace(/\s+/g,' ')) : null;
+    const meta=host==='droidup.com' ? $(el).find('.x-p').text().split('|').map(s=>s.trim()) : [];
+    const job=posting({title:field(cards[1]),url:$(el).attr('href'),location:field(cards[2]),department:meta[1]||field(cards[3]),datePosted:meta[2]?.replaceAll('/','-')},base);
+    if(!job)throw new Error('official job card layout changed');
+    jobs.push(job);
+  }
+  if(host==='app.mokahr.com')for(const el of $('a[href^="#/job/"]').toArray()){
+    // Sidebar recommendations do not contain the full metadata card.
+    if(!$(el).find('[class*="card-content-"]').length)continue;
+    const labels=[...new Set($(el).find('[class*="info-"] .no-adaptive-tooltip').toArray().map(e=>$(e).clone().children().remove().end().text().trim()).filter(Boolean))];
+    const job=posting({title:$(el).find('[class*="title-"]').first().text(),url:$(el).attr('href'),
+      location:labels.filter(s=>/[省市]$|·/.test(s)||s==='全国').join(' / ')||null,
+      department:labels.find(s=>/事业部$|中心$|部门$/.test(s)),
+      employmentType:labels.find(s=>/^(全职|实习|兼职|劳务|合同制|Full-time|Part-time|Internship)$/.test(s)),
+      datePosted:$(el).find('[class*="published-at-"]').text().match(/\d{4}-\d\d-\d\d/)?.[0]},base);
+    if(!job)throw new Error('Moka job card layout changed');
+    jobs.push(job);
+  }
   function visit(v: any) {
     if (!v || typeof v !== "object") return;
     if (Array.isArray(v)) { v.forEach(visit); return; }

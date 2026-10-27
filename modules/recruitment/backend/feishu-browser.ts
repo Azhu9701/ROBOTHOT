@@ -1,13 +1,13 @@
 import { config } from '@aihot/backend/config';
 import { assertPublicUrl } from '@aihot/backend/lib/url';
-import { hash,parseApi,unique } from './parse.ts';
+import { hash,parseApi,unique,isFeishuHost } from './parse.ts';
 import type { Source,Snapshot,Posting } from '../types.ts';
 
 // Mac-only public-page collection. No login, signatures, copied cookies or model calls.
 export async function readFeishu(source:Source):Promise<Snapshot> {
   if(process.env.RECRUITMENT_BROWSER_ENABLED!=='true')throw new Error('browser_adapter_disabled');
   const endpoint=await assertPublicUrl(source.endpoint!,config.allowPrivateNetworkFetch);
-  if(!config.allowPrivateNetworkFetch && !/^[\w-]+\.jobs\.feishu\.cn$/.test(endpoint.hostname))throw new Error('unsupported public career host');
+  if(!config.allowPrivateNetworkFetch && !isFeishuHost(endpoint.hostname))throw new Error('unsupported public career host');
   const {chromium}=await import('@playwright/test');
   const browser=await chromium.launch({headless:true});
   const pages:Array<{jobs:Posting[];count:number;hash:string}>=[];let problem:Error|null=null;
@@ -22,7 +22,7 @@ export async function readFeishu(source:Source):Promise<Snapshot> {
     const page=await context.newPage();
     page.on('response',async response=>{
       const u=new URL(response.url());if(u.host!==endpoint.host||u.pathname!=='/api/v1/search/job/posts')return;
-      try{const raw=await response.text();const data=JSON.parse(raw);pages.push({jobs:parseApi('feishu',data,endpoint.origin),count:data.data.count,hash:hash(raw)});}catch(e){problem=e as Error;}
+      try{const raw=await response.text();const data=JSON.parse(raw);pages.push({jobs:parseApi('feishu',data,page.url()),count:data.data.count,hash:hash(raw)});}catch(e){problem=e as Error;}
     });
     async function nextPacket(index:number) {
       const until=Date.now()+30000;

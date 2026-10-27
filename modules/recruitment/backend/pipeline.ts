@@ -3,6 +3,7 @@ import { guardedFetch } from "@aihot/backend/lib/http-fetch";
 import { board, careerLinks, embeddedBoard, hash, parseApi, parseHtml, publicUrl, unique } from "./parse.ts";
 import type { Source, Snapshot, Posting } from "../types.ts";
 import { readFeishu } from "./feishu-browser.ts";
+import { readMoka } from "./moka-browser.ts";
 import { CAREER_SEEDS, CAREER_BOARD_SEEDS } from "../seeds.ts";
 
 const WORLD = "https://www.aiman.world";
@@ -104,6 +105,7 @@ export async function discoverDue(limit = 20) {
 export async function readSnapshot(source: Source): Promise<Snapshot> {
   if (!source.endpoint || !source.career_url) throw new Error("source not ready");
   if(source.provider==='feishu')return readFeishu(source);
+  if(source.provider==='moka')return readMoka(source);
   if(source.provider==='workday'){
     const origin=new URL(source.endpoint);const site=origin.pathname.split('/')[4];
     const base=origin.origin+'/'+site;const jobs:Posting[]=[];const hashes:string[]=[];let total:number|null=null;

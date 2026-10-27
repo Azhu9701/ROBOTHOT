@@ -21,5 +21,7 @@ test('public browser collector reads every UI page and preserves original IDs',a
  try{
   const snapshot=await readFeishu({endpoint:`http://127.0.0.1:${port}/index/position/list`} as Source);
   assert.equal(snapshot.complete,true);assert.equal(snapshot.jobs.length,3);assert.deepEqual(offsets,[0,2]);assert.ok(snapshot.jobs.every(j=>j.url.includes('/index/position/')));
+  offsets.length=0;const custom=await readFeishu({endpoint:'http://127.0.0.1:'+port+'/careers/position/list'} as Source);
+  assert.equal(custom.jobs.length,3);assert.ok(custom.jobs.every(j=>j.url.includes('/careers/position/')));
  }finally{config.allowPrivateNetworkFetch=privateBefore;if(flag===undefined)delete process.env.RECRUITMENT_BROWSER_ENABLED;else process.env.RECRUITMENT_BROWSER_ENABLED=flag;server.closeAllConnections();await new Promise<void>(r=>server.close(()=>r()));}
 });
