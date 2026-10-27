@@ -94,3 +94,12 @@ test('Moka public cards retain distinct SPA URLs, displayed metadata and source 
  assert.equal(publicUrl('https://app.mokahr.com/social-recruitment/astribot/144861#/job/abc-1')?.endsWith('#/job/abc-1'),true);
  assert.equal(board('https://robot.jobs.feishu.cn/index/position/detail/123')?.endpoint,'https://robot.jobs.feishu.cn/index/position/list');
 });
+
+test('Feishu internal CN identifiers never override explicit overseas countries',()=>{
+ const parse=(country:unknown,state:unknown)=>{const location=parseApi('feishu',{code:0,data:{count:1,job_post_list:[{id:'1',title:'Engineer',job_post_info:{address_list:[{country,state,city:{name:'Source city'}}]}}]}},'https://robot.jobs.feishu.cn')[0].locations?.[0];assert.ok(location);return location;};
+ assert.equal(parse({country_code:'CN_1',name:'中国大陆',en_name:'Chinese Mainland'},{name:'广东'}).country,'CN');
+ const us=parse({country_code:'CN_6',name:'美国',en_name:'United States of America'},{name:'加利福尼亚州',en_name:'California'});
+ assert.equal(us.country,'US');assert.equal(us.region,'California');
+ assert.equal(parse({country_code:'CN_24',name:'中国香港',en_name:'Hong Kong, China'},{name:'香港岛'}).country,'HK');
+ assert.equal(parse({country_code:'CN_999',name:'Unrecognized source country'},{name:'Unknown'}).country,null);
+});

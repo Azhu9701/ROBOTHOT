@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { load } from "cheerio";
 import type { Posting } from "../types.ts";
+import {countryCode} from "./geography.ts";
 
 export const hash = (text: string) => createHash("sha256").update(text).digest("hex");
 // Official custom Feishu domains, verified through each company's linked career page.
@@ -93,7 +94,11 @@ export function parseApi(provider: string, data: any, base: string): Posting[] {
     const jobs=data.data.job_post_list.map((v:any)=>{
       if(typeof v.id!=='string'||!/^\d+$/.test(v.id))throw new Error('invalid job identifier');
       const addresses=v.job_post_info?.address_list||[];
-      const locations=addresses.map((p:any)=>({raw:text(p.city?.name||p.name),country:text(p.country?.country_code)?.split('_')[0]||null,region:text(p.state?.name),city:text(p.city?.name)}));
+      // Feishu's CN_6 is the United States, not an ISO country prefix.
+      const locations=addresses.map((p:any)=>{
+        const country=countryCode(p.country?.name)||countryCode(p.country?.en_name)||(p.country?.country_code==='CN_1'?'CN':countryCode(p.country?.country_code));
+        return {raw:text(p.city?.name||p.name),country,region:text(country==='US'?(p.state?.en_name||p.state?.name):p.state?.name),city:text(p.city?.name)};
+      });
       const prefix=new URL(base).pathname.match(/^\/([^/]+)\/position\//)?.[1]||'index';
       const job=posting({title:v.title,url:new URL('/'+prefix+'/position/'+v.id+'/detail',base).href,location:(v.city_list||[]).map((p:any)=>p.name).filter(Boolean).join(' / '),employmentType:v.recruit_type?.name,datePosted:typeof v.publish_time==='number'?new Date(v.publish_time).toISOString():null},base);
       return job&&{...job,...(locations.length?{locations}: {})};
