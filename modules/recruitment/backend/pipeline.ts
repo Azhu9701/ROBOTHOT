@@ -4,6 +4,7 @@ import { board, careerLinks, embeddedBoard, hash, parseApi, parseHtml, publicUrl
 import type { Source, Snapshot, Posting } from "../types.ts";
 import { readFeishu } from "./feishu-browser.ts";
 import { readMoka } from "./moka-browser.ts";
+import {reconcileFeishuAliases} from "./identity.ts";
 import { CAREER_SEEDS, CAREER_BOARD_SEEDS } from "../seeds.ts";
 
 const WORLD = "https://www.aiman.world";
@@ -141,6 +142,7 @@ export async function readSnapshot(source: Source): Promise<Snapshot> {
 }
 export async function applySnapshot(source: Source, snapshot: Snapshot) {
   await sql.begin(async tx => {
+    const now=new Date();await reconcileFeishuAliases(tx,source,snapshot.jobs.map(j=>({url:j.url,lastSeen:now})),"system:recruitment");
     for (const job of snapshot.jobs) await tx`
       INSERT INTO recruitment_jobs (company,url,details,baseline,evidence_hash)
       VALUES (${source.company},${job.url},${tx.json({ ...job })},${source.last_success === null},${snapshot.hash})

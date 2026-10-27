@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { sql } from '@aihot/backend/db';
 import { audit } from '@aihot/backend/audit';
 import { hash,publicUrl } from './parse.ts';
+import {reconcileFeishuAliases} from './identity.ts';
 const stamp=z.string().datetime({offset:true}).refine(s=>Date.parse(s)<=Date.now()+300000,'future observation');
 const url=z.string().max(3000).refine(s=>publicUrl(s)!==null,'public HTTP URL required');
 const source=z.object({company:z.string().min(1).max(200),company_url:url,official_url:url.nullable(),career_url:url.nullable(),provider:z.string().nullable(),endpoint:url.nullable(),status:z.string().max(50),evidence:z.record(z.string(),z.unknown()),catalog_seen_at:stamp,discovered_at:stamp.nullable(),attempted_at:stamp.nullable(),last_success:stamp.nullable(),last_error:z.string().max(300).nullable()});
@@ -29,6 +30,7 @@ export async function importRecruitment(input:unknown,actor:string) {
         WHERE GREATEST(EXCLUDED.catalog_seen_at,EXCLUDED.attempted_at,EXCLUDED.discovered_at,EXCLUDED.last_success)>=GREATEST(recruitment_sources.catalog_seen_at,recruitment_sources.attempted_at,recruitment_sources.discovered_at,recruitment_sources.last_success) RETURNING company`;
       if(updated.length)accepted.add(s.company);
     }
+    for(const s of data.sources)if(accepted.has(s.company)&&s.provider==='feishu')await reconcileFeishuAliases(tx,s,data.jobs.filter(j=>j.company===s.company).map(j=>({url:j.url,lastSeen:new Date(j.last_seen)})),actor);
     for(const j of data.jobs){if(!accepted.has(j.company))continue;
       await tx`INSERT INTO recruitment_jobs(company,url,details,first_seen,last_seen,missing_since,baseline,evidence_hash)
         VALUES(${j.company},${j.url},${tx.json(j.details)},${j.first_seen},${j.last_seen},${j.missing_since},${j.baseline},${j.evidence_hash})
