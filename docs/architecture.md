@@ -108,3 +108,7 @@ npm run build -w @aihot/web && node --test apps/web/tests/*.test.ts
 ```
 
 `DATABASE_URL` 指向的库名必须以 `_test` 或 `_ci` 结尾；没有会自动创建并迁移。每个测试文件在它的一份副本上并行运行，所以数据库账号要有建库权限（`CREATEDB`）。测试不访问任何外部服务：模型和付费接口都由本地假服务回答。
+
+## 招聘数据域
+
+官方招聘由 `modules/recruitment/` 独立维护；所有招聘出口读取该模块的 `backend/publication.ts`，不接入新闻发布表或热点评分。来源、观察状态与运行方式见 [招聘管线](recruitment.md)。
