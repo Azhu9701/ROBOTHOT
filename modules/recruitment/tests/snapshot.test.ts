@@ -1,0 +1,26 @@
+import assert from "node:assert/strict";
+import { after, test } from "node:test";
+import { closeDb, sql } from "@aihot/backend/db";
+import { applySnapshot, recordFailure } from "../backend/pipeline.ts";
+import { readJobs } from "../backend/publication.ts";
+import type { Source, Posting } from "../types.ts";
+after(closeDb);
+test("baseline, idempotency, missing and reappearance share one public read layer", async () => {
+  const company="Recruitment Fixture";
+  await sql`INSERT INTO recruitment_sources (company,company_url,official_url,career_url,status) VALUES (${company},'https://www.aiman.world/company/fixture','https://robot.example/','https://robot.example/careers','ready')`;
+  const source={company,last_success:null} as Source;
+  const job:Posting={url:"https://robot.example/job/1",title:"Data Operator",location:"杭州",department:null,employmentType:null,postedAt:null,validThrough:null};
+  await applySnapshot(source,{jobs:[job],complete:true,hash:"baseline"});
+  await applySnapshot({...source,last_success:new Date()},{jobs:[job],complete:true,hash:"repeat"});
+  assert.equal((await sql`SELECT * FROM recruitment_jobs WHERE company=${company}`).length,1);
+  let d=await readJobs({company}); assert.equal(d.total,1); assert.equal(d.jobs[0].baseline,true);
+  const lastSeen = d.jobs[0].last_seen.toISOString();
+  await recordFailure(company,"source_http_429");
+  d=await readJobs({company}); assert.equal(d.total,1); assert.equal(d.jobs[0].last_seen.toISOString(),lastSeen);
+  await applySnapshot({...source,last_success:new Date()},{jobs:[],complete:false,hash:"partial"});
+  assert.equal((await readJobs({company})).total,1);
+  await applySnapshot({...source,last_success:new Date()},{jobs:[],complete:true,hash:"missing"});
+  assert.equal((await readJobs({company})).total,0); assert.equal((await readJobs({company,status:"uncertain"})).total,1);
+  await applySnapshot({...source,last_success:new Date()},{jobs:[job],complete:true,hash:"return"});
+  d=await readJobs({company}); assert.equal(d.total,1); assert.equal(d.jobs[0].missing_since,null);
+});
