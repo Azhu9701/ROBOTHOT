@@ -2,11 +2,37 @@ import { createHash } from "node:crypto";
 import { load } from "cheerio";
 import type { Posting } from "../types.ts";
 import {countryCode} from "./geography.ts";
+import type { Place } from "./geography.ts";
 
 export const hash = (text: string) => createHash("sha256").update(text).digest("hex");
 // Official custom Feishu domains, verified through each company's linked career page.
 export const isFeishuHost = (host:string) => /^[\w-]+\.jobs\.feishu\.cn$/.test(host) || ['career.limxdynamics.com','careers.kinetixai.cn'].includes(host);
 const text = (x: unknown): string | null => typeof x === "string" && x.trim() ? x.trim().slice(0, 500) : null;
+const MAX_DESCRIPTION = 20_000;
+const decodeHtml = (value: string): string => load(`<div id="__od_text">${value}</div>`)("#__od_text").text();
+/** Converts provider HTML or plain text into display-safe plain text without dropping paragraphs. */
+export function plainText(value: unknown): string | null {
+  if (typeof value !== "string" || !value.trim()) return null;
+  let text = value;
+  // Greenhouse's detail API double-encodes its HTML content.
+  for (let pass = 0; pass < 2 && /&(?:lt|gt|amp|quot|#\d+);/i.test(text); pass++) text = decodeHtml(text);
+  if (/<[a-z][\s\S]*>/i.test(text)) {
+    const $ = load(`<div id="__od_body">${text}</div>`);
+    const root = $("#__od_body");
+    root.find("br").replaceWith("\n");
+    root.find("p,div,li,h1,h2,h3,h4,h5,h6,tr,section,article").each((_i, element) => { $(element).append("\n"); });
+    text = root.text();
+  }
+  text = text.replace(/\r\n?/g, "\n").replace(/\u00a0/g, " ").split("\n").map(line => line.replace(/[ \t]+/g, " ").trim()).join("\n").replace(/\n{3,}/g, "\n\n").trim();
+  return text ? text.slice(0, MAX_DESCRIPTION) : null;
+}
+function descriptionOf(value: Record<string, any>): string | null {
+  const body = plainText(value.descriptionPlain ?? value.descriptionText ?? value.descriptionHtml ?? value.content ?? value.description ?? value.jobDescription ?? value.roleDescription);
+  const requirement = plainText(value.requirement ?? value.require ?? value.requirements ?? value.qualifications);
+  if (!body) return requirement;
+  if (!requirement || body.includes(requirement)) return body;
+  return `${body}\n\n任职要求\n${requirement}`;
+}
 export function publicUrl(raw: unknown, base?: string): string | null {
   try {
     if (typeof raw !== "string") return null;
@@ -41,6 +67,8 @@ export function board(raw: string): { provider: string; endpoint: string } | nul
       return { provider: "lever", endpoint: `https://${u.hostname === "jobs.eu.lever.co" ? "api.eu.lever.co" : "api.lever.co"}/v0/postings/${slug}` };
     if(u.hostname==='app.mokahr.com' && /^\/(?:social|campus)-recruitment\/[\w-]+\/\d+\/?$/.test(u.pathname))
       return {provider:'moka',endpoint:u.href};
+    if(/^[\w-]+\.zhiye\.com$/.test(u.hostname))
+      return {provider:'zhiye',endpoint:`${u.origin}/api/Jobad/GetJobAdPageList`};
     if (u.hostname === "jobs.ashbyhq.com" && slug && /^[\w-]+$/.test(slug))
       return { provider: "ashby", endpoint: `https://api.ashbyhq.com/posting-api/job-board/${slug}` };
     if(isFeishuHost(u.hostname)){
@@ -83,11 +111,37 @@ function posting(value: Record<string, any>, base: string): Posting | null {
     const address = v.address?.postalAddress || v.jobLocation?.address || {};
     return {raw:text(v.location?.name ?? v.location ?? v.categories?.location)?.replace(/[、·]/g,' / ')||null,country:text(address.addressCountry?.name ?? address.addressCountry),region:text(address.addressRegion),city:text(address.addressLocality)};
   });
-  return { title, url, locations, remote:typeof value.isRemote === "boolean" ? value.isRemote : null, location: text(value.location?.name ?? value.location ?? value.categories?.location),
+  const description = descriptionOf(value);
+  const job: Posting = { title, url, locations, remote:typeof value.isRemote === "boolean" ? value.isRemote : null, location: text(value.location?.name ?? value.location ?? value.categories?.location),
     department: text(value.departments?.[0]?.name ?? value.department ?? value.categories?.team),
     employmentType: text(value.employmentType ?? value.categories?.commitment),
     postedAt: date(value.datePosted ?? value.publishedAt), validThrough: date(value.validThrough) };
+  return description ? { ...job, description } : job;
 }
+// Beisen (zhiye.com) portals write locations as 省·市·区 chains or country names.
+// Only tokens observed in real portals are translated; anything else keeps its original text.
+const ZHIYE_PROVINCES:Record<string,string>={'江苏':'江苏省','江苏省':'江苏省','广东':'广东省','广东省':'广东省','浙江':'浙江省','浙江省':'浙江省','上海':'上海市','上海市':'上海市','北京':'北京市','北京市':'北京市','guangdong':'广东省','jiangsu':'江苏省','zhejiang':'浙江省','shanghai':'上海市','beijing':'北京市'};
+const ZHIYE_CITIES:Record<string,string>={'苏州':'江苏省','苏州市':'江苏省','南京':'江苏省','南京市':'江苏省','深圳':'广东省','深圳市':'广东省','杭州':'浙江省','杭州市':'浙江省','suzhou':'江苏省','nanjing':'江苏省','shenzhen':'广东省','hangzhou':'浙江省'};
+const ZHIYE_COUNTRIES:Record<string,string>={'china':'CN','usa':'US','united states':'US','germany':'DE','denmark':'DK','sweden':'SE','poland':'PL'};
+function zhiyePlace(part:string):Place|null{
+  const segments=part.split('·').map(s=>s.trim()).filter(Boolean);
+  if(!segments.length)return null;
+  const place:Place={raw:part.trim(),country:null,region:null,city:null};
+  // 全国 is the source's own country-wide scope, not an omitted location.
+  if(segments.length===1&&segments[0]==='全国'){place.country='CN';return place;}
+  for(const segment of segments){
+    const key=segment.toLowerCase();
+    const country=ZHIYE_COUNTRIES[key];
+    if(country){place.country=country;place.region=null;place.city=null;continue;}
+    const province=ZHIYE_PROVINCES[segment]??ZHIYE_PROVINCES[key];
+    if(province){place.country='CN';place.region=province;continue;}
+    const city=ZHIYE_CITIES[segment]??ZHIYE_CITIES[key];
+    if(city){place.country='CN';place.city=segment;place.region??=city;continue;}
+    if(/区$/.test(segment)){place.country??='CN';place.city=segment;continue;}
+  }
+  return place;
+}
+function zhiyePlaces(item:string):Place[]{return item.split(/[,，]/).map(zhiyePlace).filter((p):p is Place=>!!p);}
 export function parseApi(provider: string, data: any, base: string): Posting[] {
   if(provider==='feishu') {
     if(data?.code!==0||!Array.isArray(data.data?.job_post_list)||!Number.isInteger(data.data.count)||data.data.count<0)throw new Error('invalid public Feishu job list');
@@ -100,7 +154,7 @@ export function parseApi(provider: string, data: any, base: string): Posting[] {
         return {raw:text(p.city?.name||p.name),country,region:text(country==='US'?(p.state?.en_name||p.state?.name):p.state?.name),city:text(p.city?.name)};
       });
       const prefix=new URL(base).pathname.match(/^\/([^/]+)\/position\//)?.[1]||'index';
-      const job=posting({title:v.title,url:new URL('/'+prefix+'/position/'+v.id+'/detail',base).href,location:(v.city_list||[]).map((p:any)=>p.name).filter(Boolean).join(' / '),employmentType:v.recruit_type?.name,datePosted:typeof v.publish_time==='number'?new Date(v.publish_time).toISOString():null},base);
+      const job=posting({title:v.title,url:new URL('/'+prefix+'/position/'+v.id+'/detail',base).href,location:(v.city_list||[]).map((p:any)=>p.name).filter(Boolean).join(' / '),employmentType:v.recruit_type?.name,datePosted:typeof v.publish_time==='number'?new Date(v.publish_time).toISOString():null,description:v.description,requirement:v.requirement},base);
       return job&&{...job,...(locations.length?{locations}: {})};
     });
     if(jobs.some((j:Posting|null)=>!j))throw new Error('invalid public Feishu job');return unique(jobs as Posting[]);
@@ -112,6 +166,30 @@ export function parseApi(provider: string, data: any, base: string): Posting[] {
       return posting({title:v.title,url:base+v.externalPath,location:v.locationsText},base);
     });
     if(jobs.some((j:Posting|null)=>!j))throw new Error('invalid Workday job');
+    return unique(jobs as Posting[]);
+  }
+  if(provider==='zhiye') {
+    // Detail routes live under each category's own portal path.
+    const paths:Record<string,string>={'1':'social','2':'campus','3':'intern'};
+    if(data?.Code!==200||!Number.isInteger(data?.Count)||data.Count<0)throw new Error('invalid zhiye job list');
+    if(!Array.isArray(data?.Data))throw new Error('invalid zhiye job list');
+    const jobs=data.Data.map((v:any)=>{
+      if(typeof v?.Id!=='string'||!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v.Id)||typeof v?.JobAdName!=='string')throw new Error('invalid zhiye job identifier');
+      const path=paths[String(v?.CategoryId)];
+      if(!path)throw new Error('unknown zhiye category '+String(v?.CategoryId));
+      const location=(Array.isArray(v.LocNames)?v.LocNames:[]).filter((s:unknown):s is string=>typeof s==='string'&&s.trim()!=='').join(' / ')||null;
+      const job=posting({
+        title:v.JobAdName,
+        url:new URL(`/${path}/detail?jobAdId=${v.Id}`,base).href,
+        location,employmentType:text(v.Kind),
+        // The portal displays a calendar date; the timestamp itself carries no source timezone.
+        datePosted:typeof v.PostDate==='string'&&/^\d{4}-\d{2}-\d{2}T/.test(v.PostDate)?v.PostDate.slice(0,10):null,
+        description:v.Duty,requirement:v.Require,
+      },base);
+      const locations=(Array.isArray(v.LocNames)?v.LocNames:[]).flatMap((item:unknown)=>typeof item==='string'?zhiyePlaces(item):[]);
+      return job&&{...job,...(locations.length?{locations}:{})};
+    });
+    if(jobs.some((j:Posting|null)=>!j))throw new Error('invalid zhiye job');
     return unique(jobs as Posting[]);
   }
   const values = provider === "lever" ? data : data?.jobs;

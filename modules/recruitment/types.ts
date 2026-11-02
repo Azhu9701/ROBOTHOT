@@ -8,6 +8,8 @@ export interface Posting {
   employmentType: string | null;
   postedAt: string | null;
   validThrough: string | null;
+  /** Plain-text job description captured from the official source. */
+  description?: string | null;
 }
 export interface Snapshot { jobs: Posting[]; complete: boolean; hash: string }
 export interface Source {

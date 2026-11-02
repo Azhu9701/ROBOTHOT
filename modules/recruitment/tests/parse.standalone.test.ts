@@ -20,10 +20,15 @@ test("malformed and partial boards fail rather than becoming successful empty sn
   assert.throws(() => parseApi("greenhouse", { jobs: [], meta: { total:1 } }, "https://robot.example/"));
   assert.deepEqual(parseApi("greenhouse", { jobs: [], meta: { total:0 } }, "https://robot.example/"), []);
 });
-test("JSON-LD handles arrays and graphs without copying descriptions or guessing dates", () => {
+test("Greenhouse content=true descriptions become plain text", () => {
+  const d = parseApi("greenhouse", { jobs: [{ title: "Engineer", absolute_url: "/job/1", content: "&lt;div&gt;&lt;p&gt;Build robots.&lt;/p&gt;&lt;p&gt;Ship them.&lt;/p&gt;&lt;/div&gt;" }], meta: { total: 1 } }, "https://robot.example/");
+  assert.equal(d.length, 1); assert.equal(d[0].description, "Build robots.\nShip them.");
+});
+
+test("JSON-LD handles arrays and graphs and copies the source description without guessing dates", () => {
   const d = parseHtml('<script type="application/ld+json">{"@graph":[{"@type":"JobPosting","title":"Engineer","url":"/job/1","datePosted":"2026-10-25","description":"long copyrighted body","jobLocation":{"address":{"addressLocality":"杭州"}}}]}</script>', "https://robot.example/careers");
   assert.equal(d.jobs.length, 1); assert.equal(d.jobs[0].location, "杭州"); assert.equal(d.jobs[0].postedAt, "2026-10-25");
-  assert.equal("description" in d.jobs[0], false); assert.equal(d.complete, false);
+  assert.equal(d.jobs[0].description, "long copyrighted body"); assert.equal(d.complete, false);
   assert.deepEqual(parseApi("ashby", { jobs:[{title:"Hidden",jobUrl:"/hidden",isListed:false}] }, "https://robot.example/"), []);
 });
 
@@ -45,9 +50,9 @@ test('Workday preserves the original employer URL and never guesses relative pos
   assert.throws(()=>parseApi('workday',{total:1,jobPostings:[{title:'Invalid',externalPath:'https://evil.test/job/1'}]},'https://example.test'));
 });
 
-test('Feishu keeps source address hierarchy and absolute publication metadata without descriptions',()=>{
+test('Feishu keeps source address hierarchy, absolute publication metadata and descriptions',()=>{
  const d=parseApi('feishu',{code:0,data:{count:1,job_post_list:[{id:'12345',title:'数据采集员',publish_time:1792047350106,description:'not stored',city_list:[{name:'杭州'}],recruit_type:{name:'全职'},job_post_info:{address_list:[{city:{name:'杭州'},state:{name:'浙江'},country:{country_code:'CN_1'}}]}}]}},'https://robot.jobs.feishu.cn');
- assert.equal(d[0].url,'https://robot.jobs.feishu.cn/index/position/12345/detail');assert.equal(d[0].locations?.[0].country,'CN');assert.equal(d[0].locations?.[0].region,'浙江');assert.equal(d[0].postedAt,new Date(1792047350106).toISOString());assert.equal('description' in d[0],false);
+ assert.equal(d[0].url,'https://robot.jobs.feishu.cn/index/position/12345/detail');assert.equal(d[0].locations?.[0].country,'CN');assert.equal(d[0].locations?.[0].region,'浙江');assert.equal(d[0].postedAt,new Date(1792047350106).toISOString());assert.equal(d[0].description,'not stored');
  assert.deepEqual(board('https://robot.jobs.feishu.cn/index'),{provider:'feishu',endpoint:'https://robot.jobs.feishu.cn/index'});
  assert.equal(board('https://robot.jobs.feishu.cn.evil.test/index'),null);
  assert.throws(()=>parseApi('feishu',{code:403,data:{}},'https://robot.jobs.feishu.cn'));
@@ -102,4 +107,29 @@ test('Feishu internal CN identifiers never override explicit overseas countries'
  assert.equal(us.country,'US');assert.equal(us.region,'California');
  assert.equal(parse({country_code:'CN_24',name:'中国香港',en_name:'Hong Kong, China'},{name:'香港岛'}).country,'HK');
  assert.equal(parse({country_code:'CN_999',name:'Unrecognized source country'},{name:'Unknown'}).country,null);
+});
+
+test('Beisen portals resolve tenant endpoints, category detail routes and observed location chains',()=>{
+ assert.deepEqual(board('https://dobot1.zhiye.com/social/jobs'),{provider:'zhiye',endpoint:'https://dobot1.zhiye.com/api/Jobad/GetJobAdPageList'});
+ assert.equal(board('https://robot.zhiye.com.evil.test/'),null);
+ const d=parseApi('zhiye',{Code:200,Count:2,Data:[
+  {Id:'cf2f585e-148b-4674-ad84-e33753959763',JobAdId:151239646,JobAdName:'市场运营(J10901)',CategoryId:'1',Kind:'Full-time',PostDate:'2026-09-01T20:43:58',LocNames:['Guangdong·Shenzhen']},
+  {Id:'a87ecc72-7082-4018-ae6d-19a3dbe506a6',JobAdId:151249022,JobAdName:'技术支持管培生（2027届）(J10950)',CategoryId:'2',Kind:'全职',PostDate:'2026-09-20T10:00:00',LocNames:['上海市·闵行区','全国']},
+ ]},'https://dobot1.zhiye.com');
+ assert.equal(d[0].url,'https://dobot1.zhiye.com/social/detail?jobAdId=cf2f585e-148b-4674-ad84-e33753959763');
+ assert.equal(d[0].location,'Guangdong·Shenzhen');
+ assert.equal(d[0].locations?.[0].country,'CN');assert.equal(d[0].locations?.[0].region,'广东省');assert.equal(d[0].locations?.[0].city,'Shenzhen');
+ assert.equal(d[0].postedAt,'2026-09-01');assert.equal(d[0].employmentType,'Full-time');assert.equal('Duty' in d[0],false);
+ assert.equal(d[1].url,'https://dobot1.zhiye.com/campus/detail?jobAdId=a87ecc72-7082-4018-ae6d-19a3dbe506a6');
+ assert.equal(d[1].locations?.[0].region,'上海市');assert.equal(d[1].locations?.[0].city,'闵行区');
+ assert.deepEqual(d[1].locations?.[1],{raw:'全国',country:'CN',region:null,city:null});
+ assert.throws(()=>parseApi('zhiye',{Code:200,Data:[{Id:'not-a-uuid',JobAdName:'x',CategoryId:'1'}]},'https://dobot1.zhiye.com'));
+ assert.throws(()=>parseApi('zhiye',{Code:200,Data:[{Id:'cf2f585e-148b-4674-ad84-e33753959763',JobAdName:'x',CategoryId:'9'}]},'https://dobot1.zhiye.com'));
+ assert.throws(()=>parseApi('zhiye',{Code:500,Data:[]},'https://dobot1.zhiye.com'));
+ const multi=parseApi('zhiye',{Code:200,Count:1,Data:[{Id:'43387d4a-ff52-41f8-be00-1dcc1cbc0c82',JobAdName:'Sales',CategoryId:'3',LocNames:['Denmark,Sweden']}]},'https://dobot1.zhiye.com');
+ assert.equal(multi[0].url,'https://dobot1.zhiye.com/intern/detail?jobAdId=43387d4a-ff52-41f8-be00-1dcc1cbc0c82');
+ assert.equal(multi[0].locations?.length,2);
+ assert.equal(multi[0].locations?.[0].country,'DK');assert.equal(multi[0].locations?.[1].country,'SE');
+ const unmapped=parseApi('zhiye',{Code:200,Count:1,Data:[{Id:'43387d4a-ff52-41f8-be00-1dcc1cbc0c82',JobAdName:'Sales',CategoryId:'1',LocNames:['某一未收录城市']}]},'https://dobot1.zhiye.com');
+ assert.equal(unmapped[0].locations?.[0].raw,'某一未收录城市');assert.equal(unmapped[0].locations?.[0].country,null);
 });

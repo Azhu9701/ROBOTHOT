@@ -132,7 +132,22 @@ export async function readSnapshot(source: Source): Promise<Snapshot> {
     }
     throw new Error("Lever page limit reached; snapshot incomplete");
   }
-  const page = await getPage(source.endpoint);
+  if (source.provider === "zhiye") {
+    const jobs: Posting[] = []; const hashes: string[] = []; let total: number | null = null;
+    for (let pageIndex = 0; pageIndex < 1000; pageIndex++) {
+      const r = await guardedFetch(source.endpoint, { method: "POST", headers: { "content-type": "application/json", "x-requested-with": "xmlhttprequest" }, body: JSON.stringify({ PageIndex: pageIndex, PageSize: 50, KeyWords: "", SpecialType: 0, PortalId: "", DisplayFields: ["Category", "Kind", "LocId", "PostDate"] }), timeoutMs: 25000, maxBytes: 5 * 1024 * 1024 });
+      if (r.status !== 200) throw new Error("source_http_" + r.status);
+      const raw = r.text(); const data = JSON.parse(raw);
+      if (data?.Code !== 200 || !Array.isArray(data.Data) || !Number.isInteger(data.Count) || data.Count < 0) throw new Error("invalid zhiye response");
+      if (total === null) total = data.Count; else if (total !== data.Count) throw new Error("zhiye total changed; incomplete snapshot");
+      jobs.push(...parseApi("zhiye", data, source.career_url)); hashes.push(hash(raw));
+      if (jobs.length >= total!) { const uniqueJobs = unique(jobs); if (uniqueJobs.length !== total) throw new Error("duplicate zhiye page"); return { jobs: uniqueJobs, complete: true, hash: hash(hashes.join(":")) }; }
+      if (data.Data.length < 50) throw new Error("incomplete zhiye page");
+    }
+    throw new Error("zhiye page limit reached");
+  }
+  const endpoint = source.provider === "greenhouse" ? `${source.endpoint}${source.endpoint.includes("?") ? "&" : "?"}content=true` : source.endpoint;
+  const page = await getPage(endpoint);
   if (source.provider === "html") {
     const parsed = parseHtml(page.body, page.url);
     if (!parsed.supported) throw new Error("manual_adapter_required");
