@@ -4,7 +4,7 @@
 // overrides with a version check, are re-projected to every public exit, and are audited.
 import { z } from "zod";
 import { correctReportClassification } from "../reports/correct.ts";
-import type { AdminContentChain, AdminContentRow, AdminPublication, BeforeJson } from "@aihot/contracts/admin";
+import type { AdminContentBody, AdminContentChain, AdminContentRow, AdminPublication, BeforeJson } from "@aihot/contracts/admin";
 import { ARTICLE_ID_PATTERN, CATEGORY_KEYS } from "@aihot/contracts/taxonomy";
 import { sql, type Tx } from "../db.ts";
 import { enqueue, QUEUES } from "../jobs/queue.ts";
@@ -16,6 +16,7 @@ import { requestRegroup } from "../events/corrections.ts";
 import { computeHotRanking, storedHotRanking } from "../events/hot.ts";
 import { audit, auditHistory, Conflict } from "../audit.ts";
 import { sha256, stableJson } from "../lib/ids.ts";
+import { collapseWhitespace, stripTags } from "../lib/text.ts";
 
 interface PublicationDateMaterial {
   id: string;
@@ -150,6 +151,26 @@ export async function contentChain(id: string): Promise<Chain | null> {
     auditHistory(`content:${id}`),
   ]);
   return { article, discoveries, revisions, analyses, publication: publication[0] ?? null, override: override[0] ?? null, ledger, membership, decisions, deliveries, history };
+}
+
+/**
+ * The article's captured body for internal work on it — dedupe, quoting, translation review. It is not a
+ * licence grant: the public exits keep deciding with bodyModeOf, which withholds the body until the source
+ * licence allows it. Returns null when the article does not exist, and reports `origin: "none"` rather than
+ * pretending an uncaptured body is empty text.
+ */
+export async function contentBody(id: string): Promise<AdminContentBody | null> {
+  const [row] = await sql<{ id: string; revision: number; body_status: string; body_text: string | null; body_html: string | null;
+    x_post: { text?: string } | null; site_fulltext: boolean; syndicate_fulltext: boolean }[]>`
+    SELECT a.id, a.revision, a.body_status, a.body_text, a.body_html, a.x_post, s.site_fulltext, s.syndicate_fulltext
+    FROM articles a JOIN sources s ON s.id = a.source_id WHERE a.id = ${id}`;
+  if (!row) return null;
+  const captured = String(row.body_text ?? "").trim() || stripTags(String(row.body_html ?? "")).trim();
+  const posted = String(row.x_post?.text ?? "").trim();
+  const text = collapseWhitespace(captured || posted);
+  const origin = captured ? "article" : posted ? "x_post" : "none";
+  return { id: row.id, revision: row.revision, body_status: row.body_status, body_chars: [...text].length, text, origin,
+    site_fulltext: row.site_fulltext, syndicate_fulltext: row.syndicate_fulltext };
 }
 
 /** Whether the current hot ranking shows the article: as an event's representative or among its reports. */
