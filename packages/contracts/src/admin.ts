@@ -212,6 +212,27 @@ export interface AdminContentChain {
   history: AdminAuditEntry[];
 }
 
+/**
+ * An article's captured body, for internal use only: the engine's own pipelines and trusted callers that
+ * need the text to work on it (dedupe, quoting, translation review). It is not a licence grant and not a
+ * public exit — the site, feeds, Markdown export and OG pages keep following bodyModeOf, which withholds
+ * the body until the source licence allows it. Fails the request rather than the page when it is missing.
+ */
+export interface AdminContentBody {
+  id: string;
+  revision: number;
+  body_status: string;
+  /** Characters in `text`, counted as code points, the same way the chain's body_chars counts them. */
+  body_chars: number;
+  /** The article's own text: its captured body, or the original post carried with the item. */
+  text: string;
+  /** Which of the article's own materials `text` came from; `none` means nothing was captured. */
+  origin: "article" | "x_post" | "none";
+  /** Licence facts, repeated here so a caller records what it saw instead of assuming a grant. */
+  site_fulltext: boolean;
+  syndicate_fulltext: boolean;
+}
+
 // Feedback
 
 export interface AdminFeedbackRow {

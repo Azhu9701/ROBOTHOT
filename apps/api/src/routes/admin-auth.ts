@@ -26,21 +26,29 @@ import { sendProblem } from "../http/respond.ts";
 const secure = () => config.siteUrl.startsWith("https://");
 
 /**
- * Password attempts: at most 10 per client address and 50 in all per 15 minutes. The overall cap holds
- * even when a client forges its address; with a 12+ character password that is far too slow to guess.
+ * Failed password attempts: at most 10 per client address and 50 in all per 15 minutes. The overall cap
+ * holds even when a client forges its address; with a 12+ character password that is far too slow to
+ * guess. Only rejections are counted: a correct password must never be locked out by earlier traffic
+ * from the same address, which is what a service re-signing in on every run would otherwise hit.
  */
 const attempts = new Map<string, number[]>();
-function over(key: string, limit: number, now: number): boolean {
-  const recent = (attempts.get(key) ?? []).filter((t) => now - t < 15 * 60_000);
-  recent.push(now);
-  attempts.set(key, recent);
-  return recent.length > limit;
+function rejected(key: string, limit: number, now: number): boolean {
+  const recent = attempts.get(key) ?? [];
+  return recent.filter((t) => now - t < 15 * 60_000).length >= limit;
 }
 function tooManyAttempts(ip: string): boolean {
   const now = Date.now();
   if (attempts.size > 5000) attempts.clear();
-  const perClient = over(`ip:${ip}`, 10, now);
-  return over("all", 50, now) || perClient;
+  return rejected("all", 50, now) || rejected(`ip:${ip}`, 10, now);
+}
+/** Records one rejected password; the counters only ever grow with wrong guesses. */
+function recordRejection(ip: string): void {
+  const now = Date.now();
+  for (const key of ["all", `ip:${ip}`]) {
+    const recent = (attempts.get(key) ?? []).filter((t) => now - t < 15 * 60_000);
+    recent.push(now);
+    attempts.set(key, recent);
+  }
 }
 
 const loginPage = (returnTo: string, error?: string) => `/admin/login?${new URLSearchParams({ return: safeReturn(returnTo), ...(error ? { error } : {}) })}`;
@@ -111,7 +119,11 @@ export function registerAdminAuth(app: FastifyInstance) {
         return reply.redirect(target, 303);
       } catch (error) {
         if (!(error instanceof LoginRejected)) req.log.error({ err: error }, "admin login failed");
-        return reply.redirect(loginPage(returnTo, error instanceof LoginRejected && /ADMIN_PASSWORD/.test(error.message) ? "unset" : "wrong"), 303);
+        // A rejected password is the only thing that counts: a server misconfiguration ("unset")
+        // would otherwise lock out the very operator who has to fix it.
+        const unset = error instanceof LoginRejected && /ADMIN_PASSWORD/.test(error.message);
+        if (!unset) recordRejection(String(req.ip));
+        return reply.redirect(loginPage(returnTo, unset ? "unset" : "wrong"), 303);
       }
     });
   });

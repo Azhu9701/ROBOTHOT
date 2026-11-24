@@ -29,6 +29,7 @@ ROBOTHOT 收集机器人与具身智能的公开消息，把同一事件的报�
 | 看近期精选 | `/` | MCP `get_latest`，默认精选、近 24 小时 |
 | 看全部公开动态 | `/all` | MCP `get_latest`，`mode="all"` |
 | 查一个厂商或技术 | `/all?q=宇树` | MCP `search`，关键词至少 2 字符 |
+| 看官方招聘岗位 | `/jobs` | MCP `get_jobs`、`/api/v1/jobs`；[管线与覆盖范围](docs/recruitment.md) |
 | 看当前热点与事件进展 | `/hot` | `get_hot_topics` → `get_story` |
 | 读现成日报／周报／月报 | `/daily`、`/weekly`、`/monthly` | `get_daily`、`get_weekly`、`get_monthly` |
 | 找机器人方向 | `/topics` | 先读 `/llms.txt` 中的主题索引 |
@@ -50,10 +51,11 @@ codex mcp add robothot --url http://localhost:3000/api/mcp
 
 远程客户端应使用实际 ROBOTHOT 部署地址；`localhost` 指向客户端自己的电脑。添加后重新打开会话，读取工具列表确认连接。
 
-客户端连接名可叫 `robothot`；**工具名保留兼容前缀 `myhot_`**。当前七个工具是：
+客户端连接名可叫 `robothot`；**工具名保留兼容前缀 `myhot_`**。当前八个工具是：
 
 | 完整工具名 | 用途 |
 |---|---|
+| `myhot_get_jobs` | 企业官方招聘岗位观察、原文与核验时间 |
 | `myhot_get_latest` | 最近 24 小时／7 天的精选或全部公开动态 |
 | `myhot_search` | 近 24 小时／7 天的关键词搜索 |
 | `myhot_get_hot_topics` | 当前事件榜，最多 10 个 |
